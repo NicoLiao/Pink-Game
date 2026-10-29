@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2e80b31aefa8d124a8d8f3e5b364093d, type: 3}
+  m_Name: Hard
+  m_EditorClassIdentifier: Assembly-CSharp::LoveShot.AIDifficulty
+  <DisplayName>k__BackingField: Hard
+  <MenuColor>k__BackingField: {r: 0.75, g: 0.15, b: 0.4, a: 1}
+  <DecisionInterval>k__BackingField: 0.3
+  <SwitchMargin>k__BackingField: 2
+  <TargetReactionTime>k__BackingField: 0
+  <StealDistanceFactor>k__BackingField: 1.2
+  <LosingStealMultiplier>k__BackingField: 0.7
+  <ProgressBonus>k__BackingField: 4
+  <DenyBonus>k__BackingField: 3
+  <NoLineOfSightPenalty>k__BackingField: 4
+  <PreferredMinDistance>k__BackingField: 3
+  <PreferredMaxDistance>k__BackingField: 6
+  <StrafeSwitchInterval>k__BackingField: {x: 1, y: 2.5}
+  <WanderChance>k__BackingField: 0
+  <MoveJitter>k__BackingField: 0
+  <ShootRange>k__BackingField: 9
+  <AimSpread>k__BackingField: 6
+  <LeadTargets>k__BackingField: 1
+  <FireCooldownMultiplier>k__BackingField: 1
+  <HarassRange>k__BackingField: 5
+  <HarassChance>k__BackingField: 0.35
+  <DodgeChance>k__BackingField: 0.5
+  <ThreatHorizon>k__BackingField: 0.6
+  <DangerRadius>k__BackingField: 0.9
+  <EvadeDuration>k__BackingField: 0.35
+  <DashDodgeTime>k__BackingField: 0.25
