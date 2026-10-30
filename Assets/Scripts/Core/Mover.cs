@@ -16,7 +16,7 @@ namespace LoveShot
         [SerializeField, Min(0f)] float dashSpeedMultiplier = 3f;
         [SerializeField, Min(0f)] float dashDuration = 0.2f;
         [Tooltip("Seconds from the start of one dash until the next is allowed.")]
-        [SerializeField, Min(0f)] float dashCooldown = 2f;
+        [SerializeField, Min(0f)] float dashCooldown = 20f;
 
         Rigidbody2D body;
         Vector2 moveInput;
@@ -34,6 +34,7 @@ namespace LoveShot
         public bool IsDashing => Time.time < dashEndTime;
         public bool CanDash => !IsDashing && Time.time >= nextDashTime;
         public float DashCooldown => dashCooldown;
+        public float DashDuration => dashDuration;
         public float DashCooldownRemaining => Mathf.Max(0f, nextDashTime - Time.time);
         public Vector2 Velocity => body.linearVelocity;
 

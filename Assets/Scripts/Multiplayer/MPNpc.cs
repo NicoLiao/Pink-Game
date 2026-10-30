@@ -1,0 +1,233 @@
+using System.Collections.Generic;
+using Unity.Netcode;
+using UnityEngine;
+
+namespace LoveShot.Multiplayer
+{
+    // Networked NPC brain, run only on the host (clients just see the synced position, owner and capture).
+    // Neutral NPCs wander; owned NPCs follow their team's player, keep spacing from teammates and shoot NPCs
+    // of every other team (neutral or enemy-owned). Mirrors the single-player NPCController behavior, but works
+    // with the 4-team MPCapture instead of Pink/Blue Affection, so the two modes stay independent.
+    // Special types (Cupid, Shy, Bodyguard...) can subclass this and override Wander / Follow / FindTarget / Fire.
+    [RequireComponent(typeof(Mover), typeof(MPCapture))]
+    public class MPNpc : NetworkBehaviour
+    {
+        public enum NpcType : byte { Basic, Cupid, Shy, Bodyguard }
+        public enum NpcBehavior : byte { Wander, Follow, Attack }
+
+        static readonly List<MPNpc> all = new();
+        public static IReadOnlyList<MPNpc> All => all;
+
+        [SerializeField] NpcType type = NpcType.Basic;
+
+        [Header("Wander (Neutral)")]
+        [SerializeField, Min(0f)] float wanderSpeed = 2f;
+        [SerializeField] Vector2 directionChangeInterval = new Vector2(1.5f, 3.5f);
+        [SerializeField, Range(0f, 1f)] float idleChance = 0.2f;
+        [SerializeField, Min(0f)] float wanderTurnSpeed = 240f;
+
+        [Header("Follow (Owned)")]
+        [SerializeField, Min(0f)] float followSpeed = 6f;
+        [SerializeField, Min(0f)] protected float followDistance = 1.8f;
+        [SerializeField, Min(0f)] float followLag = 0.3f;
+        [SerializeField, Min(0f)] float catchUpDistance = 6f;
+        [SerializeField, Min(1f)] float catchUpMultiplier = 1.35f;
+        [SerializeField, Min(0f)] float separationRadius = 1.1f;
+        [SerializeField, Min(0f)] float separationStrength = 1.5f;
+
+        [Header("Combat (Owned)")]
+        [SerializeField, Min(0f)] float attackRange = 6f;
+        [SerializeField, Min(0.05f)] float retargetInterval = 0.4f;
+        [Tooltip("Distance multiplier for enemy-owned targets. Below 1 = prefers stealing over recruiting neutrals.")]
+        [SerializeField, Min(0.1f)] float enemyTargetPriority = 0.7f;
+        [SerializeField, Min(0f)] float fireCooldown = 0.9f;
+        [SerializeField, Min(0f)] float projectileSpeed = 10f;
+        [Tooltip("Capture power per shot (players' shots are 20).")]
+        [SerializeField, Min(0f)] float shotPower = 10f;
+        [SerializeField, Min(0f)] float spawnOffset = 0.5f;
+
+        [Header("Obstacles")]
+        [SerializeField] LayerMask obstacleMask;
+        [SerializeField, Min(0f)] float lookAhead = 0.9f;
+        [SerializeField, Min(0f)] float bodyRadius = 0.4f;
+        [SerializeField, Min(0.1f)] float stuckTime = 0.8f;
+
+        readonly NetworkVariable<NpcType> npcType = new(NpcType.Basic);
+        readonly NetworkVariable<NpcBehavior> behavior = new(NpcBehavior.Wander);
+
+        public Mover Mover { get; private set; }
+        public MPCapture Capture { get; private set; }
+        public int Team => Capture.Owner;
+        public NpcType Type => npcType.Value;
+        public NpcBehavior Behavior => behavior.Value;
+
+        MPNpc target;
+        float nextRetargetTime;
+        float nextFireTime;
+        Vector2 wanderDirection;
+        Vector2 wanderHeading;
+        float nextWanderChange;
+        float stuckTimer;
+        Vector2 unstuckDirection;
+        float unstuckUntil;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => all.Clear();
+
+        protected virtual void Awake()
+        {
+            Mover = GetComponent<Mover>();
+            Capture = GetComponent<MPCapture>();
+        }
+
+        public override void OnNetworkSpawn()
+        {
+            all.Add(this);
+            Mover.enabled = IsServer;
+            if (!IsServer) return;
+            npcType.Value = type;
+            Capture.OwnerChanged += OnTeamChanged;
+            OnTeamChanged(MPTeams.Neutral, Team);
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            all.Remove(this);
+            if (IsServer) Capture.OwnerChanged -= OnTeamChanged;
+        }
+
+        protected virtual void Update()
+        {
+            if (!IsServer) return;
+            Mover.SpeedMultiplier = 1f;
+            if (!MPMatch.InProgress)
+            {
+                Mover.SetMoveInput(Vector2.zero);
+                return;
+            }
+
+            bool neutral = Team == MPTeams.Neutral;
+            Vector2 desired = Time.time < unstuckUntil ? unstuckDirection
+                : neutral ? Wander()
+                : Follow(MPPlayer.ForTeam(Team));
+            Vector2 steered = Steering.AvoidObstacles(transform.position, desired, bodyRadius, lookAhead, obstacleMask);
+            if (neutral && steered != desired) wanderDirection = wanderHeading = steered.normalized;
+            Mover.SetMoveInput(steered);
+            CheckStuck(steered);
+
+            if (!neutral) UpdateCombat();
+            NpcBehavior current = neutral ? NpcBehavior.Wander : target != null ? NpcBehavior.Attack : NpcBehavior.Follow;
+            if (behavior.Value != current) behavior.Value = current;
+        }
+
+        protected virtual void OnTeamChanged(int previous, int current)
+        {
+            Mover.MoveSpeed = current == MPTeams.Neutral ? wanderSpeed : followSpeed;
+            target = null;
+            if (current == MPTeams.Neutral) PickWanderDirection();
+        }
+
+        protected virtual Vector2 Wander()
+        {
+            if (Time.time >= nextWanderChange) PickWanderDirection();
+            if (wanderDirection == Vector2.zero) return Vector2.zero;
+            if (wanderHeading == Vector2.zero) wanderHeading = wanderDirection;
+            wanderHeading = Vector3.RotateTowards(wanderHeading, wanderDirection, wanderTurnSpeed * Mathf.Deg2Rad * Time.deltaTime, 0f);
+            return wanderHeading;
+        }
+
+        protected virtual Vector2 Follow(MPPlayer leader)
+        {
+            if (leader == null) return Wander();
+            Vector2 lag = Vector2.ClampMagnitude(leader.Velocity * followLag, followDistance);
+            Vector2 followPoint = leader.Position - lag;
+            if (Vector2.Distance(transform.position, leader.Position) > catchUpDistance) Mover.SpeedMultiplier = catchUpMultiplier;
+            return Vector2.ClampMagnitude(Arrive(followPoint, followDistance) + Separation(), 1f);
+        }
+
+        protected Vector2 Arrive(Vector2 point, float stopDistance)
+        {
+            Vector2 toPoint = point - (Vector2)transform.position;
+            float distance = toPoint.magnitude;
+            if (distance < 0.001f) return Vector2.zero;
+            float easing = Mathf.Max(stopDistance, 0.5f);
+            return toPoint / distance * Mathf.Clamp01((distance - stopDistance) / easing);
+        }
+
+        void UpdateCombat()
+        {
+            if (Time.time >= nextRetargetTime || !IsValidTarget(target, attackRange * 1.2f))
+            {
+                target = FindTarget();
+                nextRetargetTime = Time.time + retargetInterval;
+            }
+            if (target != null && Time.time >= nextFireTime) Fire(target.transform.position - transform.position);
+        }
+
+        protected virtual void Fire(Vector2 direction)
+        {
+            if (MPMatch.Instance == null || direction.sqrMagnitude < 0.0001f) return;
+            nextFireTime = Time.time + fireCooldown;
+            Vector2 origin = (Vector2)transform.position + direction.normalized * spawnOffset;
+            MPMatch.Instance.Fire(Team, origin, direction, projectileSpeed, shotPower, false, NetworkObjectId);
+        }
+
+        // Nearest visible NPC of another team; enemy-owned NPCs count as closer than neutrals.
+        protected virtual MPNpc FindTarget()
+        {
+            MPNpc best = null;
+            float bestScore = float.MaxValue;
+            foreach (MPNpc other in all)
+            {
+                if (!IsValidTarget(other, attackRange)) continue;
+                float score = Vector2.Distance(transform.position, other.transform.position);
+                if (other.Team != MPTeams.Neutral) score *= enemyTargetPriority;
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = other;
+                }
+            }
+            return best;
+        }
+
+        bool IsValidTarget(MPNpc other, float range)
+        {
+            if (other == null || other == this || !other.IsSpawned || other.Team == Team) return false;
+            Vector2 from = transform.position, to = other.transform.position;
+            return Vector2.Distance(from, to) <= range && Steering.HasLineOfSight(from, to, obstacleMask);
+        }
+
+        protected Vector2 Separation()
+        {
+            Vector2 push = Vector2.zero;
+            Vector2 position = transform.position;
+            foreach (MPNpc other in all)
+            {
+                if (other == this || other.Team != Team) continue;
+                Vector2 offset = position - (Vector2)other.transform.position;
+                float distance = offset.magnitude;
+                if (distance > 0.001f && distance < separationRadius)
+                    push += offset / distance * (1f - distance / separationRadius);
+            }
+            return push * separationStrength;
+        }
+
+        protected void PickWanderDirection()
+        {
+            wanderDirection = Random.value < idleChance ? Vector2.zero : Random.insideUnitCircle.normalized;
+            nextWanderChange = Time.time + Random.Range(directionChangeInterval.x, directionChangeInterval.y);
+        }
+
+        void CheckStuck(Vector2 move)
+        {
+            bool wantsToMove = move.sqrMagnitude > 0.25f && Time.time >= unstuckUntil;
+            stuckTimer = wantsToMove && Mover.Velocity.magnitude < 0.3f ? stuckTimer + Time.deltaTime : 0f;
+            if (stuckTimer < stuckTime) return;
+            stuckTimer = 0f;
+            unstuckDirection = Random.insideUnitCircle.normalized;
+            unstuckUntil = Time.time + 0.4f;
+            if (Team == MPTeams.Neutral) PickWanderDirection();
+        }
+    }
+}

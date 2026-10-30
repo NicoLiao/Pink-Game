@@ -8,7 +8,7 @@ Status labels used below:
 Numbers are current Inspector defaults (tunable), not final balance.
 
 ## 1. Core concept
-- **[Confirmed]** Cute, chaotic, pastel pink and blue top-down 2D arena shooter. Single-player, no online play.
+- **[Confirmed]** Cute, chaotic, pastel pink and blue top-down 2D arena shooter. Two separate modes: **Single Player** (Pink vs the Blue AI mini-boss, sections 2–9) and **Online Multiplayer** (2–4 player private-room free-for-all, section 10, added 2026-10-29 at the user's request; the original spec said "no online play"). Multiplayer must never break single player.
 - **[Confirmed]** Human player = **Pink** leader. AI mini-boss = **Blue** leader, "a second player controlled by AI" that follows the same rules. Neutral NPCs = **Gray**.
 - **[Confirmed]** Both leaders shoot love projectiles to convert NPCs. Converted NPCs join the shooter's team and fight for it. Either side can steal the other's NPCs by converting them again.
 - **[Confirmed]** Keep the teammate-conversion mechanic. **Do not** turn this into a traditional boss fight.
@@ -18,7 +18,10 @@ Numbers are current Inspector defaults (tunable), not final balance.
 ## 2. Controls (player)
 - **[Confirmed]** WASD move, mouse aim, left-click shoot, Space dash (with cooldown).
 - **[Proposed]** Holding left-click auto-fires at the fire rate (`holdToFire`).
-- **[Proposed]** Dash (reworked in Update 2, shared by both leaders): 3× move speed (21 u/s) for 0.2s, about 4 units, then a 2s cooldown counted from the start of the dash. It goes in the last movement direction (toward the arena center before any input). Walls and obstacles stop it, and it ends crisply at normal speed. Space during the cooldown does nothing.
+- **[Confirmed]** Dash: Space, **20-second cooldown** (both modes), in the current movement direction or else the last one, can't be used on cooldown, respects walls and obstacles. Cooldown configurable in the Inspector (`Mover.dashCooldown` in single player, `MPPlayer.dashCooldown` in multiplayer).
+- **[Proposed]** Dash details (shared by both leaders, so the AI mini-boss also has the 20s cooldown): 3× move speed (21 u/s) for 0.2s, about 4 units, cooldown counted from the start of the dash. Before any input it goes toward the arena center. It ends crisply at normal speed.
+- **[Confirmed]** A reusable skill system with a HUD skill slot. Dash is the only skill for now. The slot shows the Dash icon, a SPACE key badge, "DASH 14.5s" countdown, a radial cooldown overlay that drains as it recharges, and a fully lit icon with a pop when ready.
+- **[Proposed]** Skills are `Skill` components on the player (`DashSkill` in single player, `NetDashSkill` in multiplayer); the skill bar shows one slot per `Skill`, so a new ability is a new `Skill` subclass with its own key.
 - **[Proposed]** Dash feedback: afterimages, a small heart burst and light screen shake on the player's dash, plus a radial cooldown ring under the player that fills while recharging and pops in team color when ready. The AI's dash shows afterimages and the burst, but no shake or ring.
 - **[Proposed]** After the match ends: R plays again, M returns to the main menu.
 
@@ -26,7 +29,9 @@ Numbers are current Inspector defaults (tunable), not final balance.
 - **[Confirmed]** The game opens on a main menu with a **Play** button that starts the match. Cute pink arcade look. Keep it simple, but structured so Settings, Credits and other options can be added later.
 - **[Proposed]** Layout: big bobbing "LoveShot" title, the subtitle "Win their hearts before the mini-boss does!", a rounded pink PLAY button (grows on hover or selection, squishes when pressed), floating pink/blue/white hearts, and a controls hint at the bottom. PLAY is pre-selected, so Enter works too.
 - **[Confirmed]** Difficulty selection (Easy / Hard) and a Quit button on the menu.
-- **[Proposed]** Buttons: PLAY, DIFFICULTY: EASY|HARD (a click cycles it, tinted per difficulty), QUIT. Easy is the default on launch, and the choice is remembered when returning from a match in the same session. To add a difficulty, create an `AIDifficulty` asset and append it to `MainMenu.difficulties`.
+- **[Confirmed]** Main page: **SINGLE PLAYER**, **ONLINE MULTIPLAYER**, **QUIT**. Online Multiplayer opens **HOST GAME**, **JOIN GAME**, **BACK**.
+- **[Proposed]** Single Player page: PLAY, DIFFICULTY: EASY|HARD (a click cycles it, tinted per difficulty), BACK. Easy is the default on launch, and the choice is remembered when returning from a match in the same session. To add a difficulty, create an `AIDifficulty` asset and append it to `MainMenu.difficulties`.
+- **[Proposed]** Join page: a room-code field (letters/digits, case-insensitive), JOIN, BACK, and a status line for progress and errors.
 - **[Idea]** Settings and Credits panels; a pause menu during the match.
 
 ## 3. Affection and conversion
@@ -95,10 +100,32 @@ Numbers are current Inspector defaults (tunable), not final balance.
 ## 9. Technical requirements
 - **[Confirmed]** Unity 2D + C#, modular components, gameplay systems shared between player and AI, Inspector-adjustable values (speed, cooldowns, projectile strength, AI behavior), simple understandable code, kept at game-jam scope.
 
-## 10. Open questions and future ideas
+## 10. Online Multiplayer (free-for-all)
+**Rooms and lobby**
+- **[Confirmed]** Private rooms only (no public matchmaking), 2–4 human players, no AI mini-bosses. Unity Multiplayer Services sessions over Relay, Netcode for GameObjects, host-authoritative.
+- **[Confirmed]** Host Game creates a room with a join code (shown with a Copy button). Join Game takes a code and shows errors for invalid codes, full rooms and failed connections. The lobby shows the code, player count (e.g. 2/4), names and colors; Start Game is host-only and needs 2+ players; anyone can Leave. Only the host can start a match.
+- **[Confirmed]** If the host disconnects, everyone else gets a clear message and returns to the multiplayer menu. No host migration.
+- **[Proposed]** Temporary guest names ("Guest1234"). Slot = team = color in join order: Pink, Blue, Purple, Yellow; a freed slot is reused. Joining is refused while a match is running (the room is locked).
+
+**Gameplay**
+- **[Confirmed]** Each player controls only their own character with the same controls and rules: move, aim, shoot, Dash, recruit neutrals, steal from anyone. Recruited NPCs follow their player, keep spacing, and shoot neutral NPCs and other teams' NPCs.
+- **[Confirmed]** 180-second match; live leaderboard of team sizes; most NPCs wins; ties allowed. Results show the winner (or "IT'S A TIE!"), final team sizes and ranks (tied players share a rank), Return to Lobby (host only; others see "Waiting for the host...") and Main Menu.
+- **[Proposed]** 4-way conversion (`MPCapture`): each NPC has an owner (or Neutral), the team currently capturing it, and progress 0–100%. A hit by team T: if T owns it, T's shots wear down whoever is capturing it (a fully loyal NPC ignores its own team's shots); if nobody or T is capturing, T's progress grows and at 100% the NPC joins T; if another team is capturing, T first wears that progress to 0 and the overflow becomes T's progress. Recruiting a neutral takes 100 shot power, stealing an owned NPC takes 200 (player shots 20, NPC shots 10, as in single player).
+- **[Proposed]** Capture bar: the owner's remaining loyalty fills from the left in the owner's color; the capturer's progress fills from the right in its color. Neutral NPCs tint toward their capturer.
+- **[Proposed]** A player hit by another player's shot is briefly slowed and can't shoot (0.6s, then 1s immune), like single player's Lovestruck.
+- **[Proposed]** NPCs: 10 + 3 per player (16/19/22), only the basic type for now; `MPNpc` has the same virtual hooks as the single-player NPC for Cupid/Shy/Bodyguard later.
+- **[Proposed]** A player who leaves mid-match loses their team: their NPCs turn neutral. The match ends early if fewer than 2 players remain.
+- **[Proposed]** 3-2-1-GO countdown after everyone has loaded the arena (or after 10s).
+
+**Arena and camera**
+- **[Confirmed]** Larger arena for 4 players in the same style; each client has its own local camera; no empty space outside the map is visible.
+- **[Proposed]** Fixed 56×34 interior (it can't resize per screen like single player, because every client must see the same walls), mirrored on both axes, players spawn at (±21, ±10). The camera follows your own player (orthographic size 12.5) and is clamped so it never shows beyond the walls; on very wide or tall screens it zooms in until it fits. HUD panels turn see-through while your character is behind them.
+
+## 11. Open questions and future ideas
 - **[Idea]** Balance: against a passive player, the AI plus its allies snowballs to all 12 NPCs in about 22s. Needs real playtesting before choosing fixes (aim spread, ally fire rate, steal cost, harass chance).
 - **[Idea]** Make stealing cheaper (`becomeNeutralAtZero`, or a different hysteresis).
 - **[Idea]** Leader elimination or knockouts ("for now" they can't be eliminated).
 - **[Idea]** A Normal difficulty, or difficulty that also affects Blue's allies. Deliberate AI advantages remain excluded ("no unfair advantages *for now*").
 - **[Idea]** More NPC types; the user to confirm or redesign Cupid, Shy and Bodyguard behavior.
 - **[Idea]** Not started: audio, pause, real art.
+- **[Idea]** Multiplayer follow-ups: client-side prediction for your own movement (clients currently feel their round-trip latency), player-chosen names, Cupid/Shy/Bodyguard in multiplayer, spectating or late join, host migration, public matchmaking, a minimap for the larger arena.

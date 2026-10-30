@@ -15,20 +15,26 @@ How to read this file:
 | Update 1 (2026-10-29) | Main menu with Play, love meter fix (full bar at ±100), larger arena + zoomed-out camera | Implemented, automated checks passed |
 | Update 2 (2026-10-29) | Adaptive arena camera, dash rework + effects, Easy/Hard AI difficulty, menu difficulty selector + Quit, M to return to menu | Implemented, automated checks passed; 3 issues found and fixed during testing |
 | Update 3 (2026-10-29) | Arena fills the screen: walls flush with the screen edges, border pattern removed | Implemented, automated checks passed |
+| Update 4 (2026-10-29) | Online Multiplayer FFA (private Relay rooms, 2–4 players, lobby, 4-team capture, networked NPCs, results/restart), skill system + HUD skill slot, 20s Dash cooldown in both modes, new menu | Implemented; automated multi-instance checks passed (4 Editor instances over real Relay); 5 issues found and fixed |
 
-No phase has been playtested by the user yet.
+No phase has been playtested by the user yet. A Git checkpoint of the pre-multiplayer project is commit `4869fca` ("Checkpoint before online multiplayer FFA mode"); Update 4 is not committed yet.
 
 ## What exists in the project
 - **Scenes** (Build Settings order):
-  0. `Assets/Scenes/MainMenu.unity`: Main Camera, Global Light 2D, EventSystem (`InputSystemUIInputModule`), MenuCanvas (floating hearts, "LOVESHOT" title, subtitle, Buttons stack: PLAY / DIFFICULTY: EASY|HARD / QUIT, controls hint) and Main Menu (`MainMenu`).
+  0. `Assets/Scenes/MainMenu.unity`: Main Camera, Global Light 2D, EventSystem (`InputSystemUIInputModule`), MenuCanvas (floating hearts, "LOVESHOT" title, four pages: Main = SINGLE PLAYER / ONLINE MULTIPLAYER / QUIT + controls hint; Single Player = PLAY / DIFFICULTY / BACK; Online = HOST GAME / JOIN GAME / BACK + status; Join = code field / JOIN / BACK + status) and Main Menu (`MainMenu` + `MultiplayerMenu`).
   1. `Assets/Scenes/LoveShotArena.unity`: Main Camera (`CameraShake` + `ArenaCamera`, which fits the view at runtime; clear color = wall lavender), Global Light 2D, Arena (`ArenaBounds`; floor and 4 walls 2 units thick, laid out at the 36×20 minimum and resized at runtime to fill the screen, 9 point-symmetric obstacles on the `Obstacles` layer, 6), PinkLeader at (−15, 0), BlueLeader at (15, 0), NPC Spawner (area 26×16), Match Manager and HUD.
-  2. `SampleScene`: untouched.
-- **Prefabs** (`Assets/Prefabs`): PinkLeader (with `DashEffects` and a world-space DashCooldown ring), BlueLeader (`DashEffects` without ring or shake; `MiniBossAI.defaultDifficulty` = Easy), NPC, NPC_Cupid, NPC_Shy, NPC_Bodyguard, LoveProjectile, HeartBurst. Leaders use continuous collision detection.
+  2. `Assets/Scenes/MPLobby.unity`: camera, EventSystem, LobbyCanvas (`MPLobbyUI`: title, room code + COPY, PLAYERS n/4, 4 slot rows, START GAME (host only), LEAVE, hint).
+  3. `Assets/Scenes/MPArena.unity`: Main Camera (`CameraShake` + `MPFollowCamera`), Global Light 2D, Arena (fixed 56×34 interior, 4 walls, 21 obstacles mirrored on both axes, `Obstacles` layer), Match Bootstrap (`MPArenaBootstrap`, spawns the networked `MPMatch` on the host), EventSystem, HUD (`MPHUD`: timer, leaderboard, countdown, skill bar, results panel).
+  4. `SampleScene`: untouched.
+  Netcode scene sync only works for scenes in this list, and MPPM clones read it from disk (`ProjectSettings/EditorBuildSettings.asset`).
+- **Prefabs** (`Assets/Prefabs`): SkillSlot (HUD skill slot, both modes), PinkLeader (with `DashSkill`, `DashEffects` and a world-space DashCooldown ring), BlueLeader (`DashEffects` without ring or shake; `MiniBossAI.defaultDifficulty` = Easy), NPC, NPC_Cupid, NPC_Shy, NPC_Bodyguard, LoveProjectile, HeartBurst. Leaders use continuous collision detection.
+- **Multiplayer prefabs** (`Assets/Prefabs/Multiplayer`): NetworkManager (`NetworkManager` + `UnityTransport` + `MPConnection`; approval on, scene management on, tick 30, no auto player prefab), MPLobby, MPMatch, MPPlayer, MPNpc (networked, registered in `Assets/Settings/Network/LoveShotNetworkPrefabs.asset`), MPLoveProjectile (not networked; host-simulated with client visual copies). NGO also auto-generated `Assets/DefaultNetworkPrefabs.asset`; nothing references it.
+- **Networking packages (Update 4):** `com.unity.netcode.gameobjects` 2.13.3, `com.unity.services.multiplayer` 2.4.1 (Sessions + Relay; brings Authentication, Core, Transport 6.6), `com.unity.multiplayer.playmode` 3.0.0 (local multi-instance testing). The project is linked to Unity Cloud project `c476fc30-9a8b-4cac-8850-ffbab9aca8be` (org `applenico0507`); anonymous sign-in and Relay worked with no dashboard changes.
 - **Difficulty assets:** `Assets/Settings/Difficulty/Easy.asset` and `Hard.asset` (`AIDifficulty`). The builder creates them only if missing and never overwrites them, so tune them directly.
-- **Generated sprites:** `Assets/Art/Generated` (Circle, Ring, Square, Heart, RoundedRect with a 9-slice border).
-- **Scripts:** 30 runtime scripts (Update 3 added `Core/ArenaBounds`) in `Assets/Scripts` (new in Update 2: `AI/AIDifficulty`, `Core/GameSettings`, `Effects/ArenaCamera`, `Effects/DashEffects`), plus the editor builder `Assets/Editor/LoveShotBuilder.cs` (menu **LoveShot → Rebuild Arena + Menu**).
+- **Generated sprites:** `Assets/Art/Generated` (Circle, Ring, Square, Heart, RoundedRect with a 9-slice border, DashIcon).
+- **Scripts:** 50 runtime scripts in `Assets/Scripts`. Update 4 added `Core/Skills/Skill`, `Core/Skills/DashSkill`, `UI/SkillSlotUI`, `UI/SkillBarUI` and 15 in `Multiplayer/` (`MPTeams`, `MPConnection`, `MPLobby`, `MPLobbyUI`, `MultiplayerMenu`, `MPMatch`, `MPPlayer`, `NetDashSkill`, `MPPlayerVisuals`, `MPNpc`, `MPNpcVisuals`, `MPCapture`, `MPProjectile`, `MPFollowCamera`, `MPArenaBootstrap`). Changed for single player: `PlayerController` (activates skills by key), `Mover` (dashCooldown 20, `DashDuration`), `MainMenu` (per-page default selection). The editor builder is `Assets/Editor/LoveShotBuilder.cs` + `LoveShotBuilder.Multiplayer.cs` (menu **LoveShot → Rebuild Arena + Menu**, builds all four scenes).
 - **Packages added:** TextMeshPro Essential Resources were imported into `Assets/TextMesh Pro`. The Pipeline package (`com.unity.pipeline` 0.9.1-exp.1) was already present.
-- **Last compile:** 0 errors, 0 warnings. Console: 0 errors and 0 warnings through the final Play-mode runs.
+- **Last compile:** 0 errors, 0 warnings (Update 4). Console during the final runs: no errors from game code; Editor-side "Token Exchange failed" errors and one MPPM clone exception ("This cannot be used during play mode", raised by MPPM itself after a scene save) appeared.
 - Both scenes and all prefabs were regenerated after every code change listed here, including the Bodyguard fix.
 
 ## Verified (automated, live Editor)
@@ -88,7 +94,31 @@ No phase has been playtested by the user yet.
 - Forced camera aspects 16:9, 4:3, 1:1, 21:9 and 16:10 gave the same 0.40-unit wall at every edge, an interior never below 36×20, and the top wall reaching the screen top. After shrinking from 21:9 to 16:10 mid-match, no rigidbody was outside the interior.
 - 0 compile errors and warnings; no console errors.
 
+**Update 4: online multiplayer, skills, 20s dash**
+Method: the main Editor (host) plus three Multiplayer Play Mode clones (Players 2–4), each driven through the Pipeline CLI. All traffic went through real Unity Relay servers. Inputs were simulated keyboard events or the same input RPC the client sends; no human played.
+- **Sign-in and hosting:** anonymous UGS sign-in and a private Relay session worked with no dashboard setup. The host got a code (e.g. `98JWJ8`) and landed in the lobby at 1/4.
+- **Joining:** 3 clients joined by code (one typed in lowercase) → every instance showed 4/4 with the same names, slots and colors; lobby screenshots correct for host (START GAME) and client (no start button, "Waiting for the host...").
+- **Join errors:** unknown code `ABCDEF` → "No room found with that code."; empty code → "Enter a room code."; joining a running match → "That room's match has already started." (room locked); full room, tested by capping a fresh room at 2 players → third joiner got "That room is full." (the Sessions service enforces the cap; the real cap is 4). A literal fifth instance was not available.
+- **Leave/rejoin in lobby:** count dropped to 3/4 for everyone and the leaver returned to the Online page; rejoining took the free slot.
+- **Start:** a client calling `StartMatch` was ignored; the host's start moved everyone to the arena. 4 players and 22 NPCs spawned once (same count on every instance), each player at its own corner.
+- **Movement authority:** a client's W key moved only its own character (+11.3 units), identical on host and another client. Calling another player's dash RPC from a client is refused ("This RPC can only be sent by its owner").
+- **Dash:** Space on a client dashed 4.06 units in the last move direction; the 20s cooldown showed on every instance only for that player; Space again and a direct RPC during the cooldown were both refused by the host.
+- **Capture rules** (scripted hit sequence on the host): neutral capture, competing capture with overflow, full capture, loyal NPC ignoring its own team, steal needing 200, defending reduces progress, completed steal — all matched the design. End to end, a client's shots converted an NPC and every instance showed the same owner and Follow behavior; NPC allies then kept recruiting on their own with identical counts everywhere.
+- **Leaving mid-match:** that player's NPCs turned neutral and their leaderboard row disappeared; the other three kept playing.
+- **Match end:** forced to end early on the host; every instance showed phase Ended, the same ranking (a real tie happened: two players with 5 shared 1st, "IT'S A TIE!"), frozen NPCs, Return to Lobby only on the host. Screenshots checked.
+- **Restart:** a client's Return to Lobby did nothing; the host's brought everyone back with the player list intact; a second match spawned 19 NPCs for 3 players with no duplicates.
+- **Host leaving:** the host chose Main Menu mid-match → both clients returned to the Online page with "The host left the game."; NetworkManagers destroyed everywhere.
+- **Single player still works:** via the new menu, Hard and the default Easy both applied and the AI recruited; player and AI dash cooldowns are 20s; the HUD skill slot counts down ("DASH 17.9s", overlay draining) and Space on cooldown does nothing.
+- 0 compile errors and warnings.
+
 ## Bugs
+**Fixed (Update 4)**
+- Build scene list was only changed in memory, so MPPM clones and Netcode scene sync didn't know the new scenes ("Scene Hash … does not exist in the HashToBuildIndex table"). The builder now saves it to disk.
+- Joining players kept the placeholder name "Player N": their name RPC arrived before the host had added them. The host now remembers early names.
+- Disconnect messages showed Netcode's internal text ("[Disconnect Event][Client-1]…"); now replaced by "Lost connection to the host." unless it's one of our own messages.
+- After the network stopped, the player kept trying to send input RPCs (error spam). Now guarded.
+- HUD: the skill label wrapped onto two lines, and the top-left player sat under the leaderboard. Label no longer wraps; spawns moved inward to (±21, ±10); leaderboard, timer and skill bar turn see-through while your character is behind them.
+
 **Fixed (Update 2)**
 - Menu difficulty list saved as null references: opening the menu scene unloaded the freshly created difficulty assets before they were assigned. The builder now reloads them after opening the scene, and `MainMenu` ignores null entries.
 - Dash slid on for about 0.3s (about 3 units) after ending because movement eased down from dash speed. Speed is now capped to move speed when the dash ends.
@@ -100,10 +130,17 @@ No phase has been playtested by the user yet.
 - Bodyguard walked straight through its own leader to reach its guard spot, shoving the player forward. Fixed in `BodyguardNPC.AroundLeader` (sidesteps when the leader is in the way). Re-verified. A small initial nudge (about 0.3 units) remains while it rounds the leader.
 
 **Known issues / limitations (not fixed)**
+- **Multiplayer not tested by humans, in a build, or between two computers.** All checks ran in one PC's Editors (still through real Relay servers). Real mouse aiming/shooting in multiplayer, the Copy button's clipboard, player-vs-player lovestruck hits, the countdown and HUD feel, and a full 180s match were not exercised.
+- **Input latency on clients:** movement is host-authoritative with no client-side prediction, so clients see their own movement, shots and dash after a round trip plus interpolation (~100–250 ms over Relay). The host has none, which is a small host advantage.
+- **Client projectiles are visual copies:** they can look like they pass through an NPC slightly before the host reports the hit.
+- Multiplayer has only the basic NPC type; no host migration; no late join or spectating; names are random guest names.
+- The AI mini-boss now also has the 20s dash cooldown (Hard's dash-dodges are rare).
+- MPPM clones render a tiny Game view in this layout (875×88), so the follow camera zooms way in there; screenshots from clones aren't representative.
+- The Editor console shows "UnityConnectWebRequestException: Token Exchange failed" a few times per session (Editor services login). Sign-in and Relay still worked.
 - **Balance unknown:** Hard snowballs quickly against a passive player. Easy is slower but its allies still snowball, because difficulty only affects the mini-boss, not Blue's allies. Neither has been tested against a real player, and the single-run measurements vary a lot with random spawns.
 - **Real input only partly exercised:** keyboard movement and Space dash were driven through simulated Input System events. Mouse aim and click shooting, a real click or Enter on menu buttons, R and M on the result screen, and Quit in a built player (only the editor path stops Play mode) were not.
 - **MainMenu scene shows as modified after Play mode** (`isDirty`), apparently from UI layout recalculation. Harmless, but Unity may ask to save it, and the builder refuses to run while it's dirty. Reload the scene without saving (or save it) first.
-- **Dash values changed for both leaders:** 3× speed, 0.2s, 2s cooldown (previously 18 u/s, 0.15s, 1s). Hard's dash-dodges therefore happen at most every 2s instead of every 1s, a small deviation from "preserve Hard".
+- **Dash values changed for both leaders:** 3× speed, 0.2s, now a 20s cooldown (Update 4; previously 2s, originally 18 u/s, 0.15s, 1s). Hard's dash-dodges are therefore rare, a deviation from "preserve Hard" that follows the user's 20s request.
 - **Overlay UI isn't captured in screenshots:** to check it visually, switch the canvas to Screen Space Camera at runtime only. The HUD and menu were checked that way at 1280×720.
 - **Rebuild wipes tuning:** **LoveShot → Rebuild Arena + Menu** overwrites both scenes and all prefabs.
 - **Sparser arena:** the arena roughly doubled in area, but the NPC count is still 8–12 (confirmed spec), so NPCs are more spread out. Characters also appear about 30% smaller on screen at the new zoom.
@@ -115,9 +152,20 @@ No phase has been playtested by the user yet.
 - Editor test helpers (`editor set_auto_tick`, run-in-background override) are per Editor session; they reset when Unity restarts.
 - Evade at the default 50% chance, and AI behavior over a full natural match against a human, haven't been measured.
 
+## How to test multiplayer
+**On one PC (Multiplayer Play Mode):** Window → Multiplayer → Multiplayer Play Mode, tick Player 2 (and 3, 4), wait for the clone windows, press Play. In the main Editor: Online Multiplayer → Host Game, note the code. In each clone: Online Multiplayer → Join Game, type the code, Join. Start Game from the host once 2+ are in. Click into a window before using its keyboard/mouse.
+
+**With a friend on another computer:**
+1. File → Build Profiles → Windows, Build (the four scenes are already in the list; MainMenu first). Send the whole build folder (zipped) to your friend, or have them open the project in Unity 6000.6.7f1.
+2. Both need internet. Sign-in is anonymous and automatic; no accounts needed. Relay handles NAT, so no port forwarding.
+3. You: Online Multiplayer → Host Game → COPY, and send the code. Friend: Join Game → paste/type the code → JOIN.
+4. Host presses START GAME. Check: you each control only your own character, NPC colors/bars and the leaderboard match on both screens, the timer matches, Dash shows its own 20s cooldown for each of you, stealing each other's NPCs works, the results match, Return to Lobby → Start again works, and closing the host's game sends the friend back to the menu with "The host left the game."
+5. Two copies of the build on one PC also work (each gets its own guest identity).
+
 ## Next steps
-1. **User playtest** of the full loop, starting from the main menu, on both Easy and Hard. Focus on difficulty balance, dash feel, the feel of being stunned, HUD readability, the special NPCs, and the camera fit at different Game view sizes.
-2. Balance pass based on that feedback (see `GAME_DESIGN.md` §10), keeping tuning in `LoveShotBuilder.cs` or retiring the builder for hand-tuned prefabs.
+1. **User playtest**, both modes. Multiplayer: with a friend over the internet, focusing on responsiveness (client latency), readability of 4 colors and capture bars, NPC count/arena size, and the 20s dash. Single player: difficulty balance, dash feel (now 20s cooldown), stun feel, HUD readability, special NPCs.
+2. Balance pass based on that feedback (see `GAME_DESIGN.md` §11), keeping tuning in `LoveShotBuilder.cs` or retiring the builder for hand-tuned prefabs.
 3. The user to confirm or redesign the **[Proposed]** items in `GAME_DESIGN.md`, especially steal cost, the Lovestruck details, and the special NPC behaviors.
-4. Consider adding version control (git with a Unity `.gitignore`, or Unity Version Control) before further changes.
-5. Possible later work: Settings/Credits panels (`MainMenu` is structured for them), a Normal difficulty (new `AIDifficulty` asset added to `MainMenu.difficulties`), difficulty affecting Blue's allies, a pause menu, audio, real art, more NPC types.
+4. Commit Update 4 to git once reviewed (the repo and a Unity `.gitignore` now exist).
+5. Multiplayer follow-ups if wanted: client-side prediction, special NPC types online, name entry (see `GAME_DESIGN.md` §11).
+6. Possible later work: Settings/Credits panels (`MainMenu` is structured for them), a Normal difficulty (new `AIDifficulty` asset added to `MainMenu.difficulties`), difficulty affecting Blue's allies, a pause menu, audio, real art, more NPC types.

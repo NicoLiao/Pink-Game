@@ -584,7 +584,7 @@ MonoBehaviour:
   acceleration: 25
   dashSpeedMultiplier: 3
   dashDuration: 0.2
-  dashCooldown: 2
+  dashCooldown: 20
 --- !u!114 &4170544131187101521
 MonoBehaviour:
   m_ObjectHideFlags: 0

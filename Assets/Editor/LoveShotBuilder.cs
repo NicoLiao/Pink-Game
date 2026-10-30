@@ -10,7 +10,7 @@ namespace LoveShot.EditorTools
 {
     // Generates placeholder sprites, prefabs, the main menu scene, and the arena scene with its HUD.
     // Re-running regenerates the generated sprites/prefabs and overwrites both scenes.
-    public static class LoveShotBuilder
+    public static partial class LoveShotBuilder
     {
         const string ArtDir = "Assets/Art/Generated";
         const string PrefabDir = "Assets/Prefabs";
@@ -35,7 +35,7 @@ namespace LoveShot.EditorTools
         static readonly Color DeepPink = new Color(0.9f, 0.25f, 0.55f);
         static readonly Color SoftPlum = new Color(0.45f, 0.28f, 0.42f);
 
-        struct Sprites { public Sprite Circle, Ring, Square, Heart, RoundedRect; }
+        struct Sprites { public Sprite Circle, Ring, Square, Heart, RoundedRect, DashIcon; }
 
         [MenuItem("LoveShot/Rebuild Arena + Menu")]
         static void BuildFromMenu()
@@ -67,22 +67,30 @@ namespace LoveShot.EditorTools
             GameObject blueLeader = CreateLeaderPrefab(Team.Blue, sprites, projectile, burst, obstacleLayer, difficulties[0]);
             var npcs = new NpcPrefabs(sprites, projectile, burst, obstacleLayer);
 
+            SkillSlotUI skillSlot = CreateSkillSlotPrefab(sprites);
+
             BuildArena(sprites, obstacleLayer);
             // Clear color = wall color, so a camera-shake jolt past the walls reads as more wall, never as empty background.
             Camera camera = SetUpCamera(WallColor, CameraSize, CameraOffsetY);
-            ((GameObject)PrefabUtility.InstantiatePrefab(pinkLeader, scene)).transform.position = new Vector3(-LeaderSpawnX, 0f, 0f);
+            var player = (GameObject)PrefabUtility.InstantiatePrefab(pinkLeader, scene);
+            player.transform.position = new Vector3(-LeaderSpawnX, 0f, 0f);
             ((GameObject)PrefabUtility.InstantiatePrefab(blueLeader, scene)).transform.position = new Vector3(LeaderSpawnX, 0f, 0f);
             CreateSpawner((npcs.Basic, 5f), (npcs.Cupid, 1.5f), (npcs.Shy, 2f), (npcs.Bodyguard, 1.5f));
             RectTransform hudTopBar = CreateHud(new GameObject("Match Manager").AddComponent<MatchManager>());
+            SkillBarUI skillBar = CreateSkillBar(GameObject.Find("HUD").transform, skillSlot);
+            SetField(skillBar, "player", player);
             var arenaCamera = camera.gameObject.AddComponent<ArenaCamera>();
             SetField(arenaCamera, "interiorHalfExtents", new Vector2(ArenaHalfWidth, ArenaHalfHeight));
             SetField(arenaCamera, "arenaBounds", Object.FindAnyObjectByType<ArenaBounds>());
             SetField(arenaCamera, "hudTopBar", hudTopBar);
             EditorSceneManager.SaveScene(scene);
 
-            BuildMenuScene(sprites);
-            SetBuildScenes(MenuScenePath, ScenePath);
-            return $"Built {MenuScenePath} and {ScenePath}";
+            // Online multiplayer: prefabs, network setup, lobby and arena scenes.
+            GameObject networkManager = BuildMultiplayer(sprites, obstacleLayer, burst, skillSlot);
+
+            BuildMenuScene(sprites, networkManager);
+            SetBuildScenes(MenuScenePath, ScenePath, MPLobbyScenePath, MPArenaScenePath);
+            return $"Built {MenuScenePath}, {ScenePath}, {MPLobbyScenePath} and {MPArenaScenePath}";
         }
 
         // ---------- Sprites ----------
@@ -108,6 +116,15 @@ namespace LoveShot.EditorTools
                     float qx = Mathf.Max(Mathf.Abs(x) - (1f - radius), 0f), qy = Mathf.Max(Mathf.Abs(y) - (1f - radius), 0f);
                     return qx * qx + qy * qy <= radius * radius;
                 }, new Vector4(18f, 18f, 18f, 18f)),
+                // Two right-pointing chevrons ">>" for the Dash skill icon.
+                DashIcon = MakeSprite("DashIcon", 64, (x, y) =>
+                {
+                    float ay = Mathf.Abs(y);
+                    if (ay > 0.62f) return false;
+                    foreach (float cx in new[] { -0.42f, 0.18f })
+                        if (Mathf.Abs(x - cx - (0.5f - ay) * 0.8f) < 0.16f) return true;
+                    return false;
+                }),
             };
         }
 
@@ -221,6 +238,9 @@ namespace LoveShot.EditorTools
 
             if (team == Team.Pink)
             {
+                var dashSkill = go.AddComponent<DashSkill>();
+                SetField(dashSkill, "displayName", "Dash");
+                SetField(dashSkill, "icon", sprites.DashIcon);
                 go.AddComponent<PlayerController>();
                 SetField(visuals, "shakeOnStruck", 0.3f);
                 SetField(dash, "cooldownRing", CreateCooldownRing(go.transform, sprites.Ring));
@@ -600,12 +620,16 @@ namespace LoveShot.EditorTools
             for (int i = 0; i < orderedPaths.Length; i++)
                 scenes.Insert(i, new EditorBuildSettingsScene(orderedPaths[i], true));
             EditorBuildSettings.scenes = scenes.ToArray();
+            // Write ProjectSettings/EditorBuildSettings.asset now: Multiplayer Play Mode clones and Netcode's scene
+            // sync read the list from disk, and a list that only exists in memory breaks scene synchronization.
+            AssetDatabase.SaveAssets();
         }
 
         // ---------- Main menu ----------
 
-        static void BuildMenuScene(Sprites sprites)
+        static void BuildMenuScene(Sprites sprites, GameObject networkManagerPrefab)
         {
+            string networkManagerPath = AssetDatabase.GetAssetPath(networkManagerPrefab);
             AssetDatabase.DeleteAsset(MenuScenePath);
             if (!AssetDatabase.CopyAsset(SceneTemplatePath, MenuScenePath))
                 throw new InvalidOperationException($"Failed to copy {SceneTemplatePath}");
@@ -613,10 +637,7 @@ namespace LoveShot.EditorTools
             // Opening a scene unloads unreferenced assets, so load the difficulty profiles after it.
             AIDifficulty[] difficulties = EnsureDifficultyAssets();
             SetUpCamera(MenuBackgroundColor, 5f, 0f);
-
-            // The project uses the new Input System only, so the UI needs its input module.
-            var eventSystem = new GameObject("EventSystem", typeof(UnityEngine.EventSystems.EventSystem));
-            eventSystem.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>().AssignDefaultActions();
+            CreateEventSystem();
 
             Transform root = CreateCanvas("MenuCanvas").transform;
 
@@ -641,32 +662,22 @@ namespace LoveShot.EditorTools
                 AddFloat(heart, 18f, 1.1f + 0.15f * i, i * 0.9f, 8f);
             }
 
-            // Main page. Future pages (Settings, Credits) become sibling panels listed in MainMenu.panels.
-            RectTransform mainPanel = CreateRect("MainPanel", root, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-
-            TMPro.TextMeshProUGUI title = CreateText("Title", mainPanel, "LOVESHOT", 190f, DeepPink);
-            title.rectTransform.anchoredPosition = new Vector2(0f, 290f);
+            // The title stays on every page; each page is a sibling panel listed in MainMenu.panels.
+            TMPro.TextMeshProUGUI title = CreateText("Title", root, "LOVESHOT", 190f, DeepPink);
+            title.rectTransform.anchoredPosition = new Vector2(0f, 300f);
             title.rectTransform.sizeDelta = new Vector2(1400f, 240f);
             AddFloat(title.rectTransform, 10f, 1.6f, 0f, 2f);
 
-            TMPro.TextMeshProUGUI subtitle = CreateText("Subtitle", mainPanel, "Win their hearts before the mini-boss does!", 46f, SoftPlum);
-            subtitle.rectTransform.anchoredPosition = new Vector2(0f, 150f);
-            subtitle.rectTransform.sizeDelta = new Vector2(1500f, 80f);
+            var menu = new GameObject("Main Menu").AddComponent<MainMenu>();
+            var online = menu.gameObject.AddComponent<Multiplayer.MultiplayerMenu>();
+            Color plum = new Color(0.62f, 0.42f, 0.58f);
+            Color violet = new Color(0.68f, 0.48f, 0.95f);
 
-            // Buttons stack downward from here; new buttons just get added as children.
-            RectTransform buttons = CreateRect("Buttons", mainPanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 1f),
-                new Vector2(0f, 70f), new Vector2(560f, 420f));
-            var stack = buttons.gameObject.AddComponent<UnityEngine.UI.VerticalLayoutGroup>();
-            stack.spacing = 26f;
-            stack.childAlignment = TextAnchor.UpperCenter;
-            stack.childControlWidth = stack.childControlHeight = true;
-            stack.childForceExpandWidth = stack.childForceExpandHeight = false;
-            (UnityEngine.UI.Button play, _) = CreateMenuButton(buttons, "PlayButton", "PLAY", sprites.RoundedRect, DeepPink, new Vector2(460f, 130f), 68f);
-            // Cycles Easy -> Hard -> ...; MainMenu writes the label and tints it with the difficulty's MenuColor.
-            (UnityEngine.UI.Button difficulty, TMPro.TextMeshProUGUI difficultyLabel) = CreateMenuButton(buttons, "DifficultyButton", "DIFFICULTY: EASY",
-                sprites.RoundedRect, difficulties[0].MenuColor, new Vector2(540f, 100f), 42f);
-            (UnityEngine.UI.Button quit, _) = CreateMenuButton(buttons, "QuitButton", "QUIT", sprites.RoundedRect, new Color(0.62f, 0.42f, 0.58f), new Vector2(460f, 100f), 46f);
-
+            // 0: Main page.
+            (RectTransform mainPanel, RectTransform mainButtons) = CreateMenuPage(root, "MainPanel", "Win more hearts than anyone else!");
+            (UnityEngine.UI.Button single, _) = CreateMenuButton(mainButtons, "SinglePlayerButton", "SINGLE PLAYER", sprites.RoundedRect, DeepPink, new Vector2(560f, 120f), 56f);
+            (UnityEngine.UI.Button multi, _) = CreateMenuButton(mainButtons, "OnlineButton", "ONLINE MULTIPLAYER", sprites.RoundedRect, violet, new Vector2(560f, 110f), 46f);
+            (UnityEngine.UI.Button quit, _) = CreateMenuButton(mainButtons, "QuitButton", "QUIT", sprites.RoundedRect, plum, new Vector2(460f, 100f), 46f);
             TMPro.TextMeshProUGUI hint = CreateText("ControlsHint", mainPanel, "WASD move  ·  Mouse aim  ·  Click shoot  ·  Space dash", 34f, SoftPlum);
             hint.fontStyle = TMPro.FontStyles.Normal;
             hint.rectTransform.anchorMin = hint.rectTransform.anchorMax = new Vector2(0.5f, 0f);
@@ -674,24 +685,132 @@ namespace LoveShot.EditorTools
             hint.rectTransform.anchoredPosition = new Vector2(0f, 48f);
             hint.rectTransform.sizeDelta = new Vector2(1600f, 60f);
 
-            var menu = new GameObject("Main Menu").AddComponent<MainMenu>();
+            // 1: Single player (Pink vs the Blue AI mini-boss).
+            (RectTransform singlePanel, RectTransform singleButtons) = CreateMenuPage(root, "SinglePlayerPanel", "Win their hearts before the mini-boss does!");
+            (UnityEngine.UI.Button play, _) = CreateMenuButton(singleButtons, "PlayButton", "PLAY", sprites.RoundedRect, DeepPink, new Vector2(460f, 130f), 68f);
+            // Cycles Easy -> Hard -> ...; MainMenu writes the label and tints it with the difficulty's MenuColor.
+            (UnityEngine.UI.Button difficulty, TMPro.TextMeshProUGUI difficultyLabel) = CreateMenuButton(singleButtons, "DifficultyButton", "DIFFICULTY: EASY",
+                sprites.RoundedRect, difficulties[0].MenuColor, new Vector2(540f, 100f), 42f);
+            (UnityEngine.UI.Button singleBack, _) = CreateMenuButton(singleButtons, "BackButton", "BACK", sprites.RoundedRect, plum, new Vector2(360f, 90f), 42f);
+
+            // 2: Online multiplayer (private rooms, up to 4 players, free-for-all).
+            (RectTransform onlinePanel, RectTransform onlineButtons) = CreateMenuPage(root, "OnlinePanel", "Private rooms · 2-4 players · Free-for-all");
+            (UnityEngine.UI.Button host, _) = CreateMenuButton(onlineButtons, "HostButton", "HOST GAME", sprites.RoundedRect, DeepPink, new Vector2(500f, 120f), 56f);
+            (UnityEngine.UI.Button join, _) = CreateMenuButton(onlineButtons, "JoinButton", "JOIN GAME", sprites.RoundedRect, violet, new Vector2(500f, 110f), 52f);
+            (UnityEngine.UI.Button onlineBack, _) = CreateMenuButton(onlineButtons, "BackButton", "BACK", sprites.RoundedRect, plum, new Vector2(360f, 90f), 42f);
+            TMPro.TextMeshProUGUI onlineStatus = CreateStatusText(onlinePanel);
+
+            // 3: Join with a room code.
+            (RectTransform joinPanel, RectTransform joinButtons) = CreateMenuPage(root, "JoinPanel", "Enter the room code from your host");
+            TMPro.TMP_InputField codeInput = CreateCodeInput(joinButtons, sprites.RoundedRect);
+            (UnityEngine.UI.Button joinGo, _) = CreateMenuButton(joinButtons, "JoinRoomButton", "JOIN", sprites.RoundedRect, DeepPink, new Vector2(420f, 110f), 56f);
+            (UnityEngine.UI.Button joinBack, _) = CreateMenuButton(joinButtons, "BackButton", "BACK", sprites.RoundedRect, plum, new Vector2(360f, 90f), 42f);
+            TMPro.TextMeshProUGUI joinStatus = CreateStatusText(joinPanel);
+
             var serialized = new SerializedObject(menu);
-            SerializedProperty panels = serialized.FindProperty("panels");
-            panels.arraySize = 1;
-            panels.GetArrayElementAtIndex(0).objectReferenceValue = mainPanel.gameObject;
-            serialized.FindProperty("firstSelected").objectReferenceValue = play.gameObject;
+            SetArray(serialized.FindProperty("panels"), mainPanel.gameObject, singlePanel.gameObject, onlinePanel.gameObject, joinPanel.gameObject);
+            SetArray(serialized.FindProperty("panelFirstSelected"), single.gameObject, play.gameObject, host.gameObject, codeInput.gameObject);
             serialized.FindProperty("gameSceneName").stringValue = Path.GetFileNameWithoutExtension(ScenePath);
-            SerializedProperty difficultyList = serialized.FindProperty("difficulties");
-            difficultyList.arraySize = difficulties.Length;
-            for (int i = 0; i < difficulties.Length; i++) difficultyList.GetArrayElementAtIndex(i).objectReferenceValue = difficulties[i];
+            SetArray(serialized.FindProperty("difficulties"), difficulties);
             serialized.FindProperty("difficultyLabel").objectReferenceValue = difficultyLabel;
             serialized.FindProperty("difficultyBackground").objectReferenceValue = difficulty.targetGraphic;
             serialized.ApplyModifiedPropertiesWithoutUndo();
+
+            SetField(online, "mainMenu", menu);
+            SetField(online, "networkPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(networkManagerPath).GetComponent<Multiplayer.MPConnection>());
+            SetField(online, "multiplayerStatus", onlineStatus);
+            SetField(online, "joinStatus", joinStatus);
+            SetField(online, "codeInput", codeInput);
+            var onlineSerialized = new SerializedObject(online);
+            SetArray(onlineSerialized.FindProperty("busyDisabled"), host, join, onlineBack, joinGo, joinBack, codeInput);
+            onlineSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            AddClick(single, menu.ShowPanel, 1);
+            AddClick(multi, menu.ShowPanel, 2);
+            UnityEditor.Events.UnityEventTools.AddPersistentListener(quit.onClick, menu.Quit);
             UnityEditor.Events.UnityEventTools.AddPersistentListener(play.onClick, menu.Play);
             UnityEditor.Events.UnityEventTools.AddPersistentListener(difficulty.onClick, menu.CycleDifficulty);
-            UnityEditor.Events.UnityEventTools.AddPersistentListener(quit.onClick, menu.Quit);
+            AddClick(singleBack, menu.ShowPanel, 0);
+            UnityEditor.Events.UnityEventTools.AddPersistentListener(host.onClick, online.Host);
+            UnityEditor.Events.UnityEventTools.AddPersistentListener(join.onClick, online.OpenJoin);
+            UnityEditor.Events.UnityEventTools.AddPersistentListener(onlineBack.onClick, online.BackToMain);
+            UnityEditor.Events.UnityEventTools.AddPersistentListener(joinGo.onClick, online.Join);
+            UnityEditor.Events.UnityEventTools.AddPersistentListener(joinBack.onClick, online.BackToMultiplayer);
 
             EditorSceneManager.SaveScene(scene);
+        }
+
+        // A full-screen menu page with a subtitle and a vertical button stack; returns (page, stack).
+        static (RectTransform, RectTransform) CreateMenuPage(Transform root, string name, string subtitleText)
+        {
+            RectTransform panel = CreateRect(name, root, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            TMPro.TextMeshProUGUI subtitle = CreateText("Subtitle", panel, subtitleText, 46f, SoftPlum);
+            subtitle.rectTransform.anchoredPosition = new Vector2(0f, 160f);
+            subtitle.rectTransform.sizeDelta = new Vector2(1500f, 80f);
+
+            // Buttons stack downward from here; new buttons just get added as children.
+            RectTransform buttons = CreateRect("Buttons", panel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 1f),
+                new Vector2(0f, 80f), new Vector2(620f, 440f));
+            var stack = buttons.gameObject.AddComponent<UnityEngine.UI.VerticalLayoutGroup>();
+            stack.spacing = 26f;
+            stack.childAlignment = TextAnchor.UpperCenter;
+            stack.childControlWidth = stack.childControlHeight = true;
+            stack.childForceExpandWidth = stack.childForceExpandHeight = false;
+            return (panel, buttons);
+        }
+
+        // Error/progress line under a page's buttons.
+        static TMPro.TextMeshProUGUI CreateStatusText(Transform panel)
+        {
+            TMPro.TextMeshProUGUI status = CreateText("Status", panel, "", 38f, SoftPlum);
+            status.rectTransform.anchoredPosition = new Vector2(0f, -330f);
+            status.rectTransform.sizeDelta = new Vector2(1500f, 110f);
+            return status;
+        }
+
+        static TMPro.TMP_InputField CreateCodeInput(Transform parent, Sprite background)
+        {
+            GameObject go = TMPro.TMP_DefaultControls.CreateInputField(new TMPro.TMP_DefaultControls.Resources());
+            go.name = "CodeInput";
+            go.transform.SetParent(parent, false);
+            var image = go.GetComponent<UnityEngine.UI.Image>();
+            image.sprite = background;
+            image.type = UnityEngine.UI.Image.Type.Sliced;
+            image.color = Color.white;
+            var size = go.AddComponent<UnityEngine.UI.LayoutElement>();
+            size.preferredWidth = 520f;
+            size.preferredHeight = 110f;
+
+            var input = go.GetComponent<TMPro.TMP_InputField>();
+            input.characterLimit = 12;
+            input.characterValidation = TMPro.TMP_InputField.CharacterValidation.Alphanumeric;
+            foreach (TMPro.TMP_Text text in go.GetComponentsInChildren<TMPro.TMP_Text>(true))
+            {
+                text.fontSize = 56f;
+                text.alignment = TMPro.TextAlignmentOptions.Center;
+                text.fontStyle = TMPro.FontStyles.Bold | TMPro.FontStyles.UpperCase;
+            }
+            input.textComponent.color = DeepPink;
+            var placeholder = (TMPro.TMP_Text)input.placeholder;
+            placeholder.text = "ROOM CODE";
+            placeholder.color = new Color(0.45f, 0.28f, 0.42f, 0.4f);
+            return input;
+        }
+
+        static void AddClick(UnityEngine.UI.Button button, UnityEngine.Events.UnityAction<int> action, int argument) =>
+            UnityEditor.Events.UnityEventTools.AddIntPersistentListener(button.onClick, action, argument);
+
+        static void SetArray(SerializedProperty array, params Object[] values)
+        {
+            array.arraySize = values.Length;
+            for (int i = 0; i < values.Length; i++) array.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
+        }
+
+        // The project uses the new Input System only, so the UI needs its input module.
+        static void CreateEventSystem()
+        {
+            var eventSystem = new GameObject("EventSystem", typeof(UnityEngine.EventSystems.EventSystem));
+            eventSystem.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>().AssignDefaultActions();
         }
 
         static (UnityEngine.UI.Button, TMPro.TextMeshProUGUI) CreateMenuButton(Transform parent, string name, string label, Sprite sprite,

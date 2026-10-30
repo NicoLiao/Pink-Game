@@ -6,15 +6,16 @@ using UnityEngine.SceneManagement;
 namespace LoveShot
 {
     // Main menu. Buttons call these public methods from their OnClick.
-    // To add Settings / Credits later: add a panel to `panels` and a button that calls ShowPanel(index),
-    // with a Back button on that panel calling ShowPanel(0).
+    // Pages: Main (Single Player / Online Multiplayer / Quit), Single Player (Play, Difficulty), and the
+    // multiplayer pages driven by MultiplayerMenu. To add Settings / Credits later: add a panel to `panels`
+    // and a button that calls ShowPanel(index), with a Back button on that panel calling ShowPanel(0).
     public class MainMenu : MonoBehaviour
     {
         [SerializeField] string gameSceneName = "LoveShotArena";
         [Tooltip("Menu pages, shown one at a time. Element 0 is the main page.")]
         [SerializeField] GameObject[] panels;
-        [Tooltip("Selected on open so keyboard/gamepad Enter works without the mouse.")]
-        [SerializeField] GameObject firstSelected;
+        [Tooltip("Per page (same index as panels): selected on open so keyboard/gamepad Enter works without the mouse.")]
+        [SerializeField] GameObject[] panelFirstSelected;
 
         [Header("Difficulty")]
         [Tooltip("Selectable difficulties in cycling order. Element 0 is the default. Add Normal etc. here.")]
@@ -57,8 +58,8 @@ namespace LoveShot
             for (int i = 0; i < panels.Length; i++)
                 if (panels[i] != null) panels[i].SetActive(i == index);
 
-            if (index == 0 && firstSelected != null && EventSystem.current != null)
-                EventSystem.current.SetSelectedGameObject(firstSelected);
+            GameObject selected = panelFirstSelected != null && index < panelFirstSelected.Length ? panelFirstSelected[index] : null;
+            if (selected != null && EventSystem.current != null) EventSystem.current.SetSelectedGameObject(selected);
         }
 
         void SelectDifficulty(int index)

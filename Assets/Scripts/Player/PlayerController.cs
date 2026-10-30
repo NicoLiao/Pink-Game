@@ -3,7 +3,8 @@ using UnityEngine.InputSystem;
 
 namespace LoveShot
 {
-    // Reads keyboard/mouse and drives the shared Mover and Shooter. WASD move, mouse aim, LMB shoot, Space dash.
+    // Reads keyboard/mouse and drives the shared Mover and Shooter. WASD move, mouse aim, LMB shoot,
+    // and each Skill on this object by its key (Space = Dash).
     [RequireComponent(typeof(Mover), typeof(Shooter))]
     public class PlayerController : MonoBehaviour
     {
@@ -14,11 +15,13 @@ namespace LoveShot
         Mover mover;
         Shooter shooter;
         AimIndicator aimIndicator;
+        Skill[] skills;
         Vector2 lastMoveDirection;
 
         void Awake()
         {
             mover = GetComponent<Mover>();
+            skills = GetComponents<Skill>();
             shooter = GetComponent<Shooter>();
             aimIndicator = GetComponent<AimIndicator>();
             if (aimCamera == null) aimCamera = Camera.main;
@@ -52,8 +55,9 @@ namespace LoveShot
             bool fire = holdToFire ? mouse.leftButton.isPressed : mouse.leftButton.wasPressedThisFrame;
             if (fire) shooter.TryShoot(aim);
 
-            // Dash where you're moving; if standing still, in the last direction you moved.
-            if (keyboard.spaceKey.wasPressedThisFrame) mover.TryDash(lastMoveDirection);
+            // Skills (Dash) go where you're moving; if standing still, in the last direction you moved.
+            foreach (Skill skill in skills)
+                if (keyboard[skill.Key].wasPressedThisFrame) skill.TryActivate(lastMoveDirection);
         }
     }
 }
