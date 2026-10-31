@@ -53,7 +53,7 @@ The former single-player mode (Pink vs a Blue AI mini-boss) was removed on 2026-
 - **Restart MPPM clones after every rebuild or script change** (Deactivate, then Activate): their asset database is read-only, and after the main Editor rewrites assets they hang ("Asset Database is set to Read Only, but it has found out-of-date assets"; `script eval` times out). Deactivate them before editing, reactivate when ready to test.
 - Pass clone paths to the CLI with forward slashes (`--project-path "C:/Users/User/Pink Game/Library/VP/<vpId>"`); backslash escaping inside bash strings kept going wrong.
 - Multiplayer test helpers that worked: `MPMatch.ApplyLove(target.Capture, creditSlot, power, fromPlayer)` for deterministic hits; `MPPlayer.ServerEquip(index)`; teleport by setting both `Rigidbody2D.position` and `transform.position`; spawn test NPCs from `MPMatch.npcTypes` via reflection and freeze them with `RigidbodyConstraints2D.FreezeAll`. Two client RPCs sent in the same eval arrive in the same host frame (so "fire then stop" fires nothing).
-- Git: the repo was created 2026-10-29 with a Unity `.gitignore`; checkpoint commits: `4869fca` = pre-multiplayer, `024c638` = Update 4 (multiplayer FFA), `ce98e98` = Updates 5+6 (last version with single player).
+- Git: the repo was created 2026-10-29 with a Unity `.gitignore`; checkpoint commits: `4869fca` = pre-multiplayer, `024c638` = Update 4 (multiplayer FFA), `ce98e98` = Updates 5+6 (last version with single player), `30737d2` = Updates 7+8 + single-player removal. Remote: `origin` = https://github.com/NicoLiao/Pink-Game (branch `master`).
 
 ## Docs
 - `GAME_DESIGN.md`: confirmed mechanics, controls, scoring, NPC design, and open ideas.

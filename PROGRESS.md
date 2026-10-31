@@ -1,6 +1,6 @@
 # LoveShot — Progress
 
-Last updated: 2026-10-30. Git checkpoints: `4869fca` (pre-multiplayer), `024c638` (Update 4), `ce98e98` (Updates 5+6; the last version with single player). Updates 7, 8 and the single-player removal are **not committed yet**.
+Last updated: 2026-10-30. Git checkpoints: `4869fca` (pre-multiplayer), `024c638` (Update 4), `ce98e98` (Updates 5+6; the last version with single player). `30737d2` (Updates 7, 8 + single-player removal), pushed to https://github.com/NicoLiao/Pink-Game (branch `master`).
 
 How to read this file:
 - **Verified (automated):** Claude checked it in the live Editor through the Unity CLI, using scripted calls, not a human on keyboard and mouse.
@@ -231,7 +231,7 @@ Other checks:
 5. Two copies of the build on one PC also work (each gets its own guest identity).
 
 ## Next steps
-1. **Commit (when the user asks):** Updates 7, 8 and the single-player removal are uncommitted. Single player can be restored from `ce98e98` if ever wanted.
+1. Everything up to the single-player removal is committed (`30737d2`) and pushed to GitHub. Single player can be restored from `ce98e98` if ever wanted.
 2. **Update 8 look check (user):** is the all-pink palette readable (especially Pink vs Blush, Blush vs neutral), are the symbols big enough, should the ink outline be thicker or thinner (`MakeToonSprite` outline values in `LoveShotBuilder.Art.cs`)?
 3. **User playtest of Updates 5 and 7** (ideally 3–4 people over the internet): do a client's movement, dash and shooting feel as responsive as the host's? Does converting players feel good (250 love, 3s immunity)? Are the weapons balanced?
 4. Balance pass from that feedback: weapon assets in `Assets/Settings/Weapons` (survive rebuilds); NPC/player numbers in `LoveShotBuilder.Multiplayer.cs`.
