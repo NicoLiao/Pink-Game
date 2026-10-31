@@ -35,6 +35,8 @@ namespace LoveShot
         public bool CanDash => !IsDashing && Time.time >= nextDashTime;
         public float DashCooldown => dashCooldown;
         public float DashDuration => dashDuration;
+        // How far one unobstructed dash travels.
+        public float DashDistance => moveSpeed * dashSpeedMultiplier * dashDuration;
         public float DashCooldownRemaining => Mathf.Max(0f, nextDashTime - Time.time);
         public Vector2 Velocity => body.linearVelocity;
 

@@ -13,7 +13,7 @@ using Object = UnityEngine.Object;
 namespace LoveShot.EditorTools
 {
     // Online multiplayer part of the builder: networked prefabs, the NetworkManager prefab and its prefab list,
-    // the lobby scene and the 4-player arena scene, plus the HUD skill slot shared with single player.
+    // the lobby scene and the 4-player arena scene, plus the HUD skill slot.
     public static partial class LoveShotBuilder
     {
         const string MPPrefabDir = "Assets/Prefabs/Multiplayer";
@@ -131,8 +131,11 @@ namespace LoveShot.EditorTools
             trigger.radius = 0.65f;
             var visual = new GameObject("Visual").transform;
             visual.SetParent(go.transform, false);
-            SpriteRenderer glow = AddSprite(visual, "Glow", sprites.Ring, new Color(1f, 0.75f, 0.3f, 0.9f), Vector2.zero, Vector2.one * 1.25f, 3);
-            AddSprite(visual, "Badge", sprites.Circle, Color.white, Vector2.zero, Vector2.one * 1.05f, 4);
+            AddSprite(go.transform, "Shadow", sprites.Shadow, ShadowColor, new Vector2(0f, -0.62f), new Vector2(1f, 0.38f), 1);
+            AddSprite(visual, "Aura", sprites.Glow, new Color(1f, 0.6f, 0.72f, 0.7f), Vector2.zero, Vector2.one * 2.3f, 2);
+            SpriteRenderer glow = AddSprite(visual, "Glow", sprites.Ring, new Color(0.95f, 0.45f, 0.62f, 0.9f), Vector2.zero, Vector2.one * 1.25f, 3);
+            AddSprite(visual, "Badge", sprites.Blob, Color.white, Vector2.zero, Vector2.one * 1.05f, 4);
+            AddSprite(visual, "Shine", sprites.Shine, new Color(1f, 1f, 1f, 0.7f), new Vector2(-0.22f, 0.26f), new Vector2(0.4f, 0.24f), 6);
             SpriteRenderer icon = AddSprite(visual, "Icon", sprites.Heart, DeepPink, Vector2.zero, Vector2.one * 0.75f, 5);
             var pickup = go.AddComponent<MPWeaponPickup>();
             SetField(pickup, "icon", icon);
@@ -171,15 +174,23 @@ namespace LoveShot.EditorTools
             return prefab;
         }
 
-        // Host-authoritative movement: the host simulates the Rigidbody; everyone else gets interpolated 2D positions.
-        static void AddNetworkMotion(GameObject go)
+        // Smooth, light position sync. NPCs: the host simulates and everyone interpolates. Players
+        // (ownerAuthority): the owner simulates its own character for instant response (MPPlayer validates it).
+        // Lerp interpolation buffers by the measured tick latency; unreliable deltas don't stall behind a lost
+        // packet; half floats and a small threshold cut the traffic for slow or resting characters.
+        static void AddNetworkMotion(GameObject go, bool ownerAuthority)
         {
             go.AddComponent<NetworkObject>();
             var transform = go.AddComponent<NetworkTransform>();
+            transform.AuthorityMode = ownerAuthority ? NetworkTransform.AuthorityModes.Owner : NetworkTransform.AuthorityModes.Server;
             transform.SyncPositionZ = false;
             transform.SyncRotAngleX = transform.SyncRotAngleY = transform.SyncRotAngleZ = false;
             transform.SyncScaleX = transform.SyncScaleY = transform.SyncScaleZ = false;
             transform.Interpolate = true;
+            transform.PositionInterpolationType = NetworkTransform.InterpolationTypes.Lerp;
+            transform.UseUnreliableDeltas = true;
+            transform.UseHalfFloatPrecision = true;
+            transform.PositionThreshold = 0.01f;
             go.AddComponent<NetworkRigidbody2D>();
         }
 
@@ -199,6 +210,8 @@ namespace LoveShot.EditorTools
             collider.radius = 0.4f;
             var projectile = go.AddComponent<MPProjectile>();
             SetField(projectile, "sprite", renderer);
+            AddProjectileGlow(go, sprites, renderer);
+            SetField(projectile, "teamStyle", sprites.TeamStyle);
             var serialized = new SerializedObject(projectile);
             SetArray(serialized.FindProperty("styleSprites"), sprites.Heart, sprites.Rocket, sprites.Arrow);
             serialized.ApplyModifiedPropertiesWithoutUndo();
@@ -212,14 +225,15 @@ namespace LoveShot.EditorTools
             var go = new GameObject("MPPlayer");
             AddBody(go, 0.5f);
             go.GetComponent<Rigidbody2D>().collisionDetectionMode = CollisionDetectionMode2D.Continuous;
-            AddNetworkMotion(go);
+            AddNetworkMotion(go, ownerAuthority: true);
 
             // Colors are applied at runtime: body = current team, heart mark = the player's own slot.
             SpriteRenderer localRing = AddSprite(go.transform, "LocalRing", sprites.Ring, Color.white, Vector2.zero, Vector2.one * 1.6f, 1);
-            SpriteRenderer body = AddSprite(go.transform, "Body", sprites.Circle, Color.white, Vector2.zero, Vector2.one, 2);
-            AddSprite(go.transform, "Outline", sprites.Ring, Color.white, Vector2.zero, Vector2.one * 1.12f, 3);
-            AddSprite(go.transform, "IdentityBack", sprites.Heart, Color.white, Vector2.zero, Vector2.one * 0.56f, 3);
-            SpriteRenderer identity = AddSprite(go.transform, "IdentityMark", sprites.Heart, Color.white, Vector2.zero, Vector2.one * 0.4f, 4);
+            SpriteRenderer body = AddCharacterBody(go, sprites, Color.white, 1f, out Transform rig);
+            // White sticker border behind the inked body, so players stand out from NPCs.
+            AddSprite(rig, "Outline", sprites.Circle, Color.white, Vector2.zero, Vector2.one * 1.24f, 1);
+            SpriteRenderer identityBack = AddSprite(rig, "IdentityBack", sprites.Heart, Color.white, Vector2.zero, Vector2.one * 0.6f, 3);
+            SpriteRenderer identity = AddSprite(rig, "IdentityMark", sprites.Heart, Color.white, Vector2.zero, Vector2.one * 0.4f, 4);
             SpriteRenderer aimMarker = AddSprite(go.transform, "AimMarker", sprites.Heart, Color.white, new Vector2(0f, 0.85f), Vector2.one * 0.3f, 4);
             SpriteRenderer shield = AddSprite(go.transform, "ImmunityShield", sprites.Ring, Color.white, Vector2.zero, Vector2.one * 1.55f, 5);
             shield.enabled = false;
@@ -266,6 +280,8 @@ namespace LoveShot.EditorTools
             SetField(visuals, "aimMarker", aimMarker);
             SetField(visuals, "localRing", localRing);
             SetField(visuals, "identityMark", identity);
+            SetField(visuals, "identityBack", identityBack);
+            SetField(visuals, "teamStyle", sprites.TeamStyle);
             SetField(visuals, "immunityShield", shield);
             SetField(visuals, "nameTag", tag);
             SetField(visuals, "burstPrefab", burst);
@@ -284,8 +300,8 @@ namespace LoveShot.EditorTools
         // values and an accessory so it reads at a glance. Normal NPCs keep most of the spawn weight.
         static MPNpcType[] CreateMPNpcPrefabs(Sprites sprites, HeartBurst burst, HeartRing ring, FloatingText popup, int obstacleLayer)
         {
-            var gold = new Color(1f, 0.82f, 0.3f);
-            var wingColor = new Color(1f, 0.88f, 0.5f);
+            var gold = new Color(0.98f, 0.7f, 0.58f);
+            var wingColor = new Color(1f, 0.86f, 0.9f);
             var bowColor = new Color(1f, 0.35f, 0.65f);
 
             GameObject basic = CreateMPNpcPrefab<MPNpc>("MPNpc", MPNpc.NpcType.Basic, 0.8f, sprites, burst, ring, popup, obstacleLayer, null, null);
@@ -378,13 +394,11 @@ namespace LoveShot.EditorTools
         {
             var go = new GameObject(name);
             AddBody(go, bodyScale / 2f);
-            AddNetworkMotion(go);
+            AddNetworkMotion(go, ownerAuthority: false);
 
-            SpriteRenderer body = AddSprite(go.transform, "Body", sprites.Circle, TeamUtil.NeutralColor, Vector2.zero, Vector2.one * bodyScale, 2);
-            Color eyeColor = new Color(0.25f, 0.18f, 0.25f);
-            // Eyes and accessories are children of Body so they pop with it (positions are in body units).
-            AddSprite(body.transform, "EyeL", sprites.Circle, eyeColor, new Vector2(-0.17f, 0.1f), Vector2.one * 0.15f, 3);
-            AddSprite(body.transform, "EyeR", sprites.Circle, eyeColor, new Vector2(0.17f, 0.1f), Vector2.one * 0.15f, 3);
+            SpriteRenderer body = AddCharacterBody(go, sprites, MPTeams.NeutralColor, bodyScale, out _);
+            // The face and accessories are children of Body so they pop with it (positions are in body units).
+            AddSprite(body.transform, "Face", sprites.Face, Color.white, Vector2.zero, Vector2.one, 3);
 
             float barY = bodyScale / 2f + 0.22f;
             AddSprite(go.transform, "CaptureBarBack", sprites.Square, new Color(0.3f, 0.25f, 0.3f, 0.45f), new Vector2(0f, barY), new Vector2(1f, 0.14f), 5);
@@ -407,6 +421,8 @@ namespace LoveShot.EditorTools
             SetField(brain, "projectileLifetime", 2f / ProjectileSpeedScale);
             var visuals = go.AddComponent<MPNpcVisuals>();
             SetField(visuals, "body", body);
+            SetField(visuals, "badge", AddTeamBadge(body.transform, sprites));
+            SetField(visuals, "teamStyle", sprites.TeamStyle);
             SetField(visuals, "burstPrefab", burst);
             SetField(visuals, "popupPrefab", popup);
 
@@ -500,7 +516,7 @@ namespace LoveShot.EditorTools
             return SaveMPPrefab(go, "NetworkManager");
         }
 
-        // ---------- Skill HUD (shared with single player) ----------
+        // ---------- Skill HUD ----------
 
         // [icon with radial cooldown overlay + SPACE badge]  DASH  14.5s
         static SkillSlotUI CreateSkillSlotPrefab(Sprites sprites)
@@ -588,10 +604,8 @@ namespace LoveShot.EditorTools
             CreateEventSystem();
             Transform root = CreateCanvas("LobbyCanvas").transform;
 
-            TMPro.TextMeshProUGUI title = CreateText("Title", root, "PRIVATE ROOM", 120f, DeepPink);
-            title.rectTransform.anchoredPosition = new Vector2(0f, 420f);
-            title.rectTransform.sizeDelta = new Vector2(1400f, 150f);
-            AddFloat(title.rectTransform, 8f, 1.6f, 0f, 1.5f);
+            AddBackdrop(root, sprites);
+            CreateTitle(root, "PRIVATE ROOM", 120f, new Vector2(0f, 420f), new Vector2(1400f, 150f));
 
             // Room code card with Copy.
             RectTransform codeCard = CreateRect("CodeCard", root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 270f), new Vector2(900f, 130f));
@@ -606,7 +620,7 @@ namespace LoveShot.EditorTools
             code.rectTransform.sizeDelta = new Vector2(560f, 80f);
             code.characterSpacing = 12f;
             RectTransform copyHolder = CreateRect("CopyHolder", codeCard, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(300f, 0f), new Vector2(220f, 90f));
-            (UnityEngine.UI.Button copy, TMPro.TextMeshProUGUI copyLabel) = CreateMenuButton(copyHolder, "CopyButton", "COPY", sprites.RoundedRect, new Color(0.68f, 0.48f, 0.95f), new Vector2(220f, 90f), 40f);
+            (UnityEngine.UI.Button copy, TMPro.TextMeshProUGUI copyLabel) = CreateMenuButton(copyHolder, "CopyButton", "COPY", sprites.RoundedRect, Berry, new Vector2(220f, 90f), 40f);
 
             TMPro.TextMeshProUGUI count = CreateText("PlayerCount", root, "PLAYERS 1/4", 44f, SoftPlum);
             count.rectTransform.anchoredPosition = new Vector2(0f, 165f);
@@ -625,7 +639,7 @@ namespace LoveShot.EditorTools
                 rowImage.type = UnityEngine.UI.Image.Type.Sliced;
                 RectTransform dot = CreateRect("Swatch", row, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(50f, 0f), Vector2.one * 50f);
                 UnityEngine.UI.Image swatch = AddImage(dot, MPTeams.ColorOf(slot));
-                swatch.sprite = sprites.Circle;
+                swatch.sprite = sprites.TeamStyle.SymbolOf(slot);
                 swatches[slot] = swatch;
                 TMPro.TextMeshProUGUI name = CreateText("Name", row, "Waiting for player...", 40f, SoftPlum);
                 name.alignment = TMPro.TextAlignmentOptions.Left;
@@ -653,11 +667,6 @@ namespace LoveShot.EditorTools
             (UnityEngine.UI.Button start, TMPro.TextMeshProUGUI startLabel) = CreateMenuButton(buttons, "StartButton", "START GAME", sprites.RoundedRect, DeepPink, new Vector2(480f, 115f), 48f);
             (UnityEngine.UI.Button leave, _) = CreateMenuButton(buttons, "LeaveButton", "LEAVE", sprites.RoundedRect, new Color(0.62f, 0.42f, 0.58f), new Vector2(320f, 100f), 44f);
 
-            TMPro.TextMeshProUGUI hint = CreateText("Hint", root, "", 36f, SoftPlum);
-            hint.fontStyle = TMPro.FontStyles.Normal;
-            hint.rectTransform.anchoredPosition = new Vector2(0f, -450f);
-            hint.rectTransform.sizeDelta = new Vector2(1500f, 60f);
-
             var ui = root.gameObject.AddComponent<MPLobbyUI>();
             var serialized = new SerializedObject(ui);
             serialized.FindProperty("codeText").objectReferenceValue = code;
@@ -668,7 +677,6 @@ namespace LoveShot.EditorTools
             SetArray(serialized.FindProperty("slotTags"), tags);
             serialized.FindProperty("startButton").objectReferenceValue = start;
             serialized.FindProperty("startLabel").objectReferenceValue = startLabel;
-            serialized.FindProperty("hintText").objectReferenceValue = hint;
             serialized.ApplyModifiedPropertiesWithoutUndo();
             UnityEditor.Events.UnityEventTools.AddPersistentListener(copy.onClick, ui.CopyCode);
             UnityEditor.Events.UnityEventTools.AddPersistentListener(start.onClick, ui.StartGame);
@@ -712,14 +720,14 @@ namespace LoveShot.EditorTools
         {
             const float w = MPHalfWidth, h = MPHalfHeight, t = WallThickness;
             var arena = new GameObject("Arena").transform;
-            AddSprite(arena, "Floor", sprites.Square, FloorColor, Vector2.zero, new Vector2(w * 2f, h * 2f), -10);
+            AddSizedSprite(arena, "Floor", sprites.FloorTile, Color.white, Vector2.zero, new Vector2(w * 2f, h * 2f), -10, SpriteDrawMode.Tiled);
 
             var walls = new GameObject("Walls").transform;
             walls.SetParent(arena);
-            AddBlock(walls, "Wall Top", sprites, obstacleLayer, new Vector2(0f, h + t / 2f), new Vector2(w * 2f + t * 2f, t));
-            AddBlock(walls, "Wall Bottom", sprites, obstacleLayer, new Vector2(0f, -h - t / 2f), new Vector2(w * 2f + t * 2f, t));
-            AddBlock(walls, "Wall Left", sprites, obstacleLayer, new Vector2(-w - t / 2f, 0f), new Vector2(t, h * 2f));
-            AddBlock(walls, "Wall Right", sprites, obstacleLayer, new Vector2(w + t / 2f, 0f), new Vector2(t, h * 2f));
+            AddBlock(walls, "Wall Top", sprites, obstacleLayer, new Vector2(0f, h + t / 2f), new Vector2(w * 2f + t * 2f, t), color: WallColor);
+            AddBlock(walls, "Wall Bottom", sprites, obstacleLayer, new Vector2(0f, -h - t / 2f), new Vector2(w * 2f + t * 2f, t), color: WallColor);
+            AddBlock(walls, "Wall Left", sprites, obstacleLayer, new Vector2(-w - t / 2f, 0f), new Vector2(t, h * 2f), color: WallColor);
+            AddBlock(walls, "Wall Right", sprites, obstacleLayer, new Vector2(w + t / 2f, 0f), new Vector2(t, h * 2f), color: WallColor);
 
             // Mirrored on both axes, so all four corner spawns are equivalent.
             var obstacles = new GameObject("Obstacles").transform;
@@ -801,6 +809,7 @@ namespace LoveShot.EditorTools
             var serialized = new SerializedObject(hud);
             serialized.FindProperty("timerText").objectReferenceValue = timer;
             serialized.FindProperty("countdownText").objectReferenceValue = countdown;
+            serialized.FindProperty("teamStyle").objectReferenceValue = sprites.TeamStyle;
             serialized.FindProperty("skillBar").objectReferenceValue = skillBar;
             SetArray(serialized.FindProperty("boardRows"), boardRows);
             SetArray(serialized.FindProperty("boardSwatches"), boardSwatches);
@@ -927,6 +936,7 @@ namespace LoveShot.EditorTools
             capture.fillAmount = 0f;
 
             var status = panel.gameObject.AddComponent<MPStatusHUD>();
+            SetField(status, "teamStyle", sprites.TeamStyle);
             SetField(status, "nameText", name);
             SetField(status, "teamText", team);
             SetField(status, "teamSwatch", swatch);

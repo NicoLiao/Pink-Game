@@ -16,7 +16,6 @@ namespace LoveShot.Multiplayer
         [SerializeField] TMP_Text[] slotTags;
         [SerializeField] UnityEngine.UI.Button startButton;
         [SerializeField] TMP_Text startLabel;
-        [SerializeField] TMP_Text hintText;
         [SerializeField] Color emptySlotColor = new Color(0.85f, 0.8f, 0.86f);
         [SerializeField] Color emptyTextColor = new Color(0.6f, 0.52f, 0.6f);
         [SerializeField, Min(0f)] float copiedFeedbackTime = 1.5f;
@@ -47,10 +46,6 @@ namespace LoveShot.Multiplayer
                 startButton.interactable = canStart;
             }
             if (startLabel != null) startLabel.text = canStart ? "START GAME" : $"NEED {needed}+ PLAYERS";
-            if (hintText != null)
-                hintText.text = host
-                    ? (canStart ? "Everyone's here? Start when ready!" : "Share the room code with your friends.")
-                    : "Waiting for the host to start the match...";
         }
 
         void FillSlot(MPLobby lobby, NetworkManager network, int slot)

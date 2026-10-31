@@ -6,14 +6,12 @@ namespace LoveShot.Multiplayer
 {
     // Networked NPC brain, run only on the host (clients just see the synced position, owner and capture).
     // Neutral NPCs wander; owned NPCs follow their personal owner (the player who recruited them), keep
-    // spacing from teammates and shoot NPCs of every other team (neutral or enemy-owned). Mirrors the
-    // single-player NPCController behavior, but works with the 4-team MPCapture instead of Pink/Blue
-    // Affection, so the two modes stay independent.
+    // spacing from teammates and shoot NPCs of every other team (neutral or enemy-owned).
     // Special types subclass this and override Wander / Follow / UpdateCombat / TargetScore / Fire / OnTeamChanged.
     [RequireComponent(typeof(Mover), typeof(MPCapture))]
     public class MPNpc : NetworkBehaviour
     {
-        // Shy and Bodyguard are single-player types kept for future use; values stay stable for the network.
+        // Shy and Bodyguard are unused (former single-player types); the values stay stable for the network.
         public enum NpcType : byte { Basic, Cupid, Shy, Bodyguard, DramaQueen, Celebrity, Hugger }
         public enum NpcBehavior : byte { Wander, Follow, Attack, Charge }
 
@@ -91,6 +89,7 @@ namespace LoveShot.Multiplayer
         public override void OnNetworkSpawn()
         {
             all.Add(this);
+            foreach (MPPlayer player in MPPlayer.All) MPPlayer.IgnoreBodies(player, this);
             Mover.enabled = IsServer;
             if (!IsServer) return;
             npcType.Value = type;

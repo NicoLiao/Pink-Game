@@ -8,27 +8,31 @@ namespace LoveShot.Multiplayer
         public const int Neutral = -1;
         public const int MaxTeams = 4;
 
+        // Dusty mauve-gray for characters no team owns.
+        public static readonly Color NeutralColor = new Color(0.68f, 0.62f, 0.65f);
+
         static readonly Color[] colors =
         {
-            TeamUtil.PinkColor,
-            TeamUtil.BlueColor,
-            new Color(0.68f, 0.48f, 0.95f),
-            new Color(1f, 0.8f, 0.22f),
+            new Color(0.96f, 0.4f, 0.62f),
+            new Color(0.68f, 0.2f, 0.47f),
+            new Color(1f, 0.55f, 0.46f),
+            new Color(1f, 0.78f, 0.86f),
         };
 
-        // Darker versions for text on light backgrounds (yellow is unreadable otherwise).
+        // Darker versions for text on light backgrounds (Blush is unreadable otherwise).
         static readonly Color[] textColors =
         {
-            new Color(0.9f, 0.25f, 0.55f),
-            new Color(0.2f, 0.45f, 0.9f),
-            new Color(0.5f, 0.28f, 0.82f),
-            new Color(0.8f, 0.55f, 0.02f),
+            new Color(0.86f, 0.2f, 0.47f),
+            new Color(0.55f, 0.1f, 0.36f),
+            new Color(0.86f, 0.33f, 0.24f),
+            new Color(0.78f, 0.38f, 0.55f),
         };
 
-        static readonly string[] names = { "Pink", "Blue", "Purple", "Yellow" };
+        // Every team is a shade of pink; TeamStyle gives each its own symbol (heart, star, flower, diamond).
+        static readonly string[] names = { "Pink", "Berry", "Coral", "Blush" };
 
         public static bool IsTeam(int team) => team >= 0 && team < MaxTeams;
-        public static Color ColorOf(int team) => IsTeam(team) ? colors[team] : TeamUtil.NeutralColor;
+        public static Color ColorOf(int team) => IsTeam(team) ? colors[team] : NeutralColor;
         public static Color TextColorOf(int team) => IsTeam(team) ? textColors[team] : new Color(0.45f, 0.28f, 0.42f);
         public static string NameOf(int team) => IsTeam(team) ? names[team] : "Neutral";
     }

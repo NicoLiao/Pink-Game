@@ -15,6 +15,8 @@ namespace LoveShot.Multiplayer
         [Header("Leaderboard")]
         [SerializeField] GameObject[] boardRows;
         [SerializeField] UnityEngine.UI.Image[] boardSwatches;
+        [Tooltip("Team symbols for the leaderboard swatches.")]
+        [SerializeField] TeamStyle teamStyle;
         [SerializeField] TMP_Text[] boardNames;
         [SerializeField] TMP_Text[] boardCounts;
 
@@ -182,7 +184,12 @@ namespace LoveShot.Multiplayer
                 if (!used) continue;
 
                 (MPScore score, int rank) = ranking[i];
-                if (i < swatches.Length && swatches[i] != null) swatches[i].color = MPTeams.ColorOf(score.Team);
+                if (i < swatches.Length && swatches[i] != null)
+                {
+                    swatches[i].color = MPTeams.ColorOf(score.Team);
+                    Sprite symbol = teamStyle != null ? teamStyle.SymbolOf(score.Team) : null;
+                    if (symbol != null) swatches[i].sprite = symbol;
+                }
                 if (i < names.Length && names[i] != null)
                 {
                     string prefix = withRank ? $"{ordinals[Mathf.Clamp(rank - 1, 0, ordinals.Length - 1)]}  " : "";

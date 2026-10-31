@@ -10,6 +10,7 @@ namespace LoveShot.Multiplayer
         [SerializeField] TMP_Text nameText;
         [SerializeField] TMP_Text teamText;
         [SerializeField] UnityEngine.UI.Image teamSwatch;
+        [SerializeField] TeamStyle teamStyle;
         [Tooltip("Filled (Horizontal, from the left): your remaining loyalty, in your team's color.")]
         [SerializeField] UnityEngine.UI.Image loyaltyFill;
         [Tooltip("Filled (Horizontal, from the right): the capturing team's progress, in its color.")]
@@ -31,7 +32,12 @@ namespace LoveShot.Multiplayer
                 teamText.text = player.Slot == team ? $"{MPTeams.NameOf(team).ToUpperInvariant()} TEAM" : $"NOW {MPTeams.NameOf(team).ToUpperInvariant()} TEAM";
                 teamText.color = MPTeams.TextColorOf(team);
             }
-            if (teamSwatch != null) teamSwatch.color = MPTeams.ColorOf(team);
+            if (teamSwatch != null)
+            {
+                teamSwatch.color = MPTeams.ColorOf(team);
+                Sprite symbol = teamStyle != null ? teamStyle.SymbolOf(team) : null;
+                if (symbol != null) teamSwatch.sprite = symbol;
+            }
             if (loyaltyFill != null)
             {
                 loyaltyFill.fillAmount = 1f - progress;

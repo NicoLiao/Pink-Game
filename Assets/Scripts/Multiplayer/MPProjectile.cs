@@ -4,8 +4,10 @@ namespace LoveShot.Multiplayer
 {
     // A love projectile in multiplayer (heart, rocket or arrow). The host's copy is authoritative: it alone
     // detects character hits and hands them to MPMatch (ApplyLove, or Explode for rockets), exactly once
-    // (`consumed`). Clients get a visual-only copy (spawned by MPMatch) that flies the same path, bounces off
-    // the same walls, and is removed when the host reports the hit.
+    // (`consumed`). Clients get a visual-only copy (spawned by MPMatch) that flies the same path and bounces off
+    // the same walls; it bursts on a likely hit right away and is removed when the host reports the real one.
+    // A shooting client's own copies are spawned before the host's projectile exists (predicted) and take
+    // over its id when the host confirms the shot.
     // Walls are found by a swept circle cast each physics step, so ricochets are identical on every machine.
     [RequireComponent(typeof(Rigidbody2D), typeof(CircleCollider2D))]
     public class MPProjectile : MonoBehaviour
@@ -13,6 +15,8 @@ namespace LoveShot.Multiplayer
         [SerializeField] SpriteRenderer sprite;
         [Tooltip("Sprite per ProjectileStyle (Heart, Rocket, Arrow).")]
         [SerializeField] Sprite[] styleSprites;
+        [Tooltip("Heart-style shots take their team's symbol shape.")]
+        [SerializeField] TeamStyle teamStyle;
         [SerializeField] LayerMask wallMask;
         [SerializeField] HeartBurst trailPrefab;
         [SerializeField, Min(0.01f)] float trailInterval = 0.05f;
@@ -32,6 +36,11 @@ namespace LoveShot.Multiplayer
         float nextTrailTime;
 
         public ushort Id { get; private set; }
+        // Client: identifies an own shot shown before the host confirmed it (0 otherwise).
+        public uint PredictKey { get; set; }
+
+        // Client: the host confirmed this predicted shot under its projectile id.
+        public void AssignId(ushort id) => Id = id;
 
         // team only colors it; on a hit the host uses the credited player's team at that moment.
         public void Launch(MPMatch owner, ushort id, int team, int creditSlot, Vector2 velocity, MPShot shot, bool fromPlayer,
@@ -56,8 +65,21 @@ namespace LoveShot.Multiplayer
                 sprite.color = MPTeams.ColorOf(team);
                 int style = (int)shot.Style;
                 if (styleSprites != null && style < styleSprites.Length && styleSprites[style] != null) sprite.sprite = styleSprites[style];
+                Sprite symbol = shot.Style == ProjectileStyle.Heart && teamStyle != null ? teamStyle.SymbolOf(team) : null;
+                if (symbol != null) sprite.sprite = symbol;
             }
             FaceVelocity();
+            KickShooter();
+        }
+
+        // The shooter recoils on every machine that shows this shot.
+        void KickShooter()
+        {
+            Unity.Netcode.NetworkManager network = Unity.Netcode.NetworkManager.Singleton;
+            if (shooterObjectId == 0 || network == null || network.SpawnManager == null) return;
+            if (!network.SpawnManager.SpawnedObjects.TryGetValue(shooterObjectId, out Unity.Netcode.NetworkObject shooter) || shooter == null) return;
+            SquashStretch squash = shooter.GetComponentInChildren<SquashStretch>();
+            if (squash != null) squash.Kick();
         }
 
         void OnDestroy()
@@ -114,10 +136,23 @@ namespace LoveShot.Multiplayer
 
         void OnTriggerEnter2D(Collider2D other)
         {
-            if (consumed || !authoritative) return;
+            if (consumed || match == null) return;
             GameObject hit = other.attachedRigidbody != null ? other.attachedRigidbody.gameObject : other.gameObject;
-            if (!hit.TryGetComponent(out MPCapture capture) || match == null) return;
+            if (!hit.TryGetComponent(out MPCapture capture)) return;
             if (hit.TryGetComponent(out Unity.Netcode.NetworkObject networkObject) && networkObject.NetworkObjectId == shooterObjectId) return;
+
+            if (!authoritative)
+            {
+                // Visual copy: react to a likely hit right away. Rockets stop and wait for the host's explosion.
+                if (!match.LooksHittable(capture, team)) return;
+                if (shot.Explosive) body.linearVelocity = Vector2.zero;
+                else
+                {
+                    match.OnLocalImpact(this);
+                    Remove(false);
+                }
+                return;
+            }
 
             if (shot.Explosive)
             {

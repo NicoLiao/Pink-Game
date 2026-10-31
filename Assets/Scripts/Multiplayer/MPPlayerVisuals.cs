@@ -16,6 +16,9 @@ namespace LoveShot.Multiplayer
         [SerializeField] SpriteRenderer localRing;
         [Tooltip("Heart in the player's own (identity) color, so a converted player is still recognizable.")]
         [SerializeField] SpriteRenderer identityMark;
+        [Tooltip("White backing behind the identity mark; takes the same symbol shape.")]
+        [SerializeField] SpriteRenderer identityBack;
+        [SerializeField] TeamStyle teamStyle;
         [Tooltip("Ring shown while the player is conversion-immune.")]
         [SerializeField] SpriteRenderer immunityShield;
         [SerializeField] TMP_Text nameTag;
@@ -49,11 +52,13 @@ namespace LoveShot.Multiplayer
         float dashVisualUntil = float.NegativeInfinity;
         float nextAfterimageTime;
         readonly List<Afterimage> afterimages = new();
+        SquashStretch squash;
 
         void Awake()
         {
             player = GetComponent<MPPlayer>();
             if (body != null) bodyScale = body.transform.localScale;
+            squash = GetComponentInChildren<SquashStretch>();
         }
 
         void OnEnable()
@@ -78,6 +83,13 @@ namespace LoveShot.Multiplayer
             teamColor = previousTeamColor = MPTeams.ColorOf(player.Team);
             if (localRing != null) localRing.enabled = player.IsOwner;
             if (identityMark != null) identityMark.color = MPTeams.ColorOf(player.Slot);
+            // The emblem is the player's own symbol, so they stay recognizable after a conversion.
+            Sprite symbol = teamStyle != null ? teamStyle.SymbolOf(player.Slot) : null;
+            if (symbol != null)
+            {
+                if (identityMark != null) identityMark.sprite = symbol;
+                if (identityBack != null) identityBack.sprite = symbol;
+            }
         }
 
         void OnConverted(int previous, int current)
@@ -100,6 +112,7 @@ namespace LoveShot.Multiplayer
         void OnStruck()
         {
             HeartBurst.Play(burstPrefab, transform.position, struckTint, 1.2f, 10);
+            if (squash != null) squash.Squish(-0.2f);
             if (player.IsOwner) CameraShake.Shake(struckShake);
         }
 

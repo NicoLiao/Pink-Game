@@ -1,15 +1,18 @@
 using System;
 using System.Collections.Generic;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace LoveShot.Multiplayer
 {
-    // A networked player. Host-authoritative: the owning client only reads its keyboard/mouse and sends
-    // inputs and skill requests; the host moves the character with the shared Mover, fires projectiles,
-    // enforces the shot and dash cooldowns, and applies lovestruck slows and conversion.
-    // NetworkTransform replicates the position to everyone with interpolation.
+    // A networked player. Movement is owner-driven so it responds instantly: the owning machine moves its
+    // own character with the shared Mover (walls and obstacles included) and its NetworkTransform (Owner
+    // authority) streams the position to everyone. Dash and shots also start at once on the owner. The host
+    // stays the judge of everything that matters: it checks each player's speed against a movement budget
+    // and snaps a player back if they moved farther than possible, enforces the dash and shot cooldowns,
+    // fires the authoritative projectiles and resolves every hit, lovestruck slow and conversion.
     //
     // Identity vs allegiance: Slot is permanent (lobby slot, name, identity color). Team is the team the
     // player currently fights for (its MPCapture owner); it starts equal to Slot and changes when another
@@ -20,10 +23,16 @@ namespace LoveShot.Multiplayer
         [Header("Shooting (weapon stats come from the MPWeapon assets on MPMatch)")]
         [SerializeField, Min(0f)] float spawnOffset = 0.6f;
         [SerializeField] bool holdToFire = true;
+        [Tooltip("Host: a shot may arrive this fraction of the cooldown early (network jitter bunches messages).")]
+        [SerializeField, Range(0f, 0.9f)] float fireTimingGrace = 0.4f;
+        [Tooltip("Host: the owner's muzzle position is trusted within this distance of where the host sees the player.")]
+        [SerializeField, Min(0f)] float maxOriginError = 3.5f;
 
         [Header("Dash")]
         [Tooltip("Seconds between dashes. Enforced by the host.")]
         [SerializeField, Min(0f)] float dashCooldown = 20f;
+        [Tooltip("Host: seconds of clock error tolerated when checking the dash cooldown.")]
+        [SerializeField, Min(0f)] float dashGrace = 0.3f;
 
         [Header("Lovestruck (hit by an enemy player)")]
         [SerializeField, Min(0f)] float struckDuration = 0.6f;
@@ -34,9 +43,15 @@ namespace LoveShot.Multiplayer
         [Tooltip("Seconds a freshly converted player can't be converted again (shots pass through).")]
         [SerializeField, Min(0f)] float conversionImmunity = 3f;
 
-        [Header("Input")]
-        [Tooltip("Input messages per second sent to the host (plus one immediately whenever keys change).")]
-        [SerializeField, Min(1f)] float inputSendRate = 30f;
+        [Header("Movement check (host)")]
+        [Tooltip("Allowed speed as a multiple of the move speed (positions arrive unevenly).")]
+        [SerializeField, Min(1f)] float speedTolerance = 1.3f;
+        [Tooltip("Seconds of full-speed movement that may arrive in one burst (after a lag spike).")]
+        [SerializeField, Min(0.1f)] float burstSeconds = 0.75f;
+
+        [Header("Aim")]
+        [Tooltip("The aim direction is shared with everyone when it turns more than this many degrees.")]
+        [SerializeField, Min(0f)] float aimSyncAngle = 2f;
         [SerializeField] AimIndicator aimIndicator;
 
         static readonly Dictionary<int, MPPlayer> bySlot = new();
@@ -46,7 +61,7 @@ namespace LoveShot.Multiplayer
         public static event Action<MPPlayer> LocalPlayerSpawned;
 
         readonly NetworkVariable<int> slot = new(MPTeams.Neutral);
-        readonly NetworkVariable<Vector2> aim = new(Vector2.up);
+        readonly NetworkVariable<Vector2> aim = new(Vector2.up, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         readonly NetworkVariable<double> dashReadyTime = new(0d);
         readonly NetworkVariable<double> struckUntil = new(0d);
         readonly NetworkVariable<double> conversionImmuneUntil = new(0d);
@@ -55,22 +70,26 @@ namespace LoveShot.Multiplayer
         readonly NetworkVariable<double> weaponExpireTime = new(0d);
 
         Mover mover;
+        Rigidbody2D body;
         MPCapture capture;
+        NetworkTransform networkTransform;
         Camera aimCamera;
         Skill[] skills;
 
-        // Host-side input state, as last received from the owner.
-        Vector2 moveInput;
-        Vector2 aimInput = Vector2.up;
-        bool firing;
-        float nextFireTime;
-        double immuneUntil;
-
         // Owner-side.
         Vector2 lastMoveDirection = Vector2.right;
-        Vector2 sentMove;
-        bool sentFire;
-        float nextSendTime;
+        float nextFireTime;
+        ushort shotSequence;
+        float predictedDashReady;
+
+        // Host-side.
+        float serverNextFireTime;
+        double immuneUntil;
+        float moveBudget;
+        Vector2 lastCheckedPosition;
+        Vector2 lastValidPosition;
+        Vector2 observedVelocity;
+        float checkResumeTime;
 
         public static MPPlayer ForSlot(int slot) => bySlot.TryGetValue(slot, out MPPlayer player) ? player : null;
 
@@ -92,15 +111,16 @@ namespace LoveShot.Multiplayer
         // Seconds left on a picked-up weapon (0 for the Default Gun).
         public float WeaponRemaining => weapon.Value == 0 ? 0f : Mathf.Max(0f, (float)(weaponExpireTime.Value - Now));
         public Vector2 Position => transform.position;
-        // Meaningful on the host, which is the only machine that uses it (NPC following).
-        public Vector2 Velocity => mover.Velocity;
+        // Meaningful on the host (NPC following): the real velocity for its own player, a measured one for remote players.
+        public Vector2 Velocity => IsOwner ? mover.Velocity : observedVelocity;
         public float DashCooldown => dashCooldown;
-        public float DashCooldownRemaining => Mathf.Max(0f, (float)(dashReadyTime.Value - Now));
+        // The owner counts down from its own dash at once, without waiting for the host's confirmation.
+        public float DashCooldownRemaining => Mathf.Max((float)(dashReadyTime.Value - Now), IsOwner ? predictedDashReady - Time.time : 0f, 0f);
         public bool IsStruck => Now < struckUntil.Value;
         public string DisplayName => MPLobby.Instance != null ? MPLobby.Instance.NameOf(slot.Value) : MPTeams.NameOf(slot.Value);
         double Now => NetworkManager != null ? NetworkManager.ServerTime.Time : 0d;
 
-        // Raised on every machine.
+        // Raised on every machine (immediately on the owner).
         public event Action<Vector2> Dashed;
         public event Action Struck;
         // (previous team, new team), raised on every machine when this player is converted.
@@ -117,10 +137,21 @@ namespace LoveShot.Multiplayer
             LocalPlayerSpawned = null;
         }
 
+        // Players walk through NPCs. Each owner simulates only its own body (everyone else is kinematic there),
+        // so solid NPCs would block a client's player on its screen while the host pushed them aside.
+        public static void IgnoreBodies(Component a, Component b)
+        {
+            foreach (Collider2D first in a.GetComponents<Collider2D>())
+                foreach (Collider2D second in b.GetComponents<Collider2D>())
+                    Physics2D.IgnoreCollision(first, second);
+        }
+
         void Awake()
         {
             mover = GetComponent<Mover>();
+            body = GetComponent<Rigidbody2D>();
             capture = GetComponent<MPCapture>();
+            networkTransform = GetComponent<NetworkTransform>();
             skills = GetComponents<Skill>();
         }
 
@@ -136,8 +167,11 @@ namespace LoveShot.Multiplayer
             all.Add(this);
             bySlot[slot.Value] = this;
             capture.OwnerChanged += OnTeamChanged;
-            // Only the host simulates movement; everyone else follows the NetworkTransform.
-            mover.enabled = IsServer;
+            foreach (MPNpc npc in MPNpc.All) IgnoreBodies(this, npc);
+            // Only the owner simulates movement; everyone else follows the NetworkTransform.
+            mover.enabled = IsOwner;
+            lastCheckedPosition = lastValidPosition = transform.position;
+            moveBudget = MaxBudget;
             if (!IsOwner) return;
 
             Local = this;
@@ -165,8 +199,8 @@ namespace LoveShot.Multiplayer
         {
             if (!IsSpawned || NetworkManager == null || !NetworkManager.IsListening) return;
             if (IsOwner) ReadOwnerInput();
+            else if (aimIndicator != null) aimIndicator.Point(aim.Value);
             if (IsServer) Simulate();
-            if (!IsOwner && aimIndicator != null) aimIndicator.Point(aim.Value);
         }
 
         // ---------- Owner ----------
@@ -199,44 +233,137 @@ namespace LoveShot.Multiplayer
                 foreach (Skill skill in skills)
                     if (keyboard[skill.Key].wasPressedThisFrame) skill.TryActivate(lastMoveDirection);
             }
-            if (aimIndicator != null) aimIndicator.Point(aimDirection);
-
-            // Steady stream (unreliable, so a lost packet is replaced by the next), plus an immediate send on changes.
-            bool changed = move != sentMove || fire != sentFire;
-            if (!changed && Time.unscaledTime < nextSendTime) return;
-            nextSendTime = Time.unscaledTime + 1f / inputSendRate;
-            sentMove = move;
-            sentFire = fire;
-            SubmitInputRpc(move, aimDirection, fire);
+            OwnerTick(move, aimDirection, fire);
         }
 
-        [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable, InvokePermission = RpcInvokePermission.Owner)]
-        void SubmitInputRpc(Vector2 move, Vector2 aimDirection, bool fire)
-        {
-            moveInput = Vector2.ClampMagnitude(move, 1f);
-            if (aimDirection.sqrMagnitude > 0.0001f) aimInput = aimDirection.normalized;
-            firing = fire;
-            if ((aim.Value - aimInput).sqrMagnitude > 0.0004f) aim.Value = aimInput;
-        }
-
-        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
-        public void RequestDashRpc(Vector2 direction) => ServerTryDash(direction);
-
-        // ---------- Host ----------
-
-        void Simulate()
+        // One frame of owner input: moves locally, shares the aim, and fires (predicted, then confirmed by the host).
+        void OwnerTick(Vector2 move, Vector2 aimDirection, bool fire)
         {
             bool live = MPMatch.InProgress;
             bool struck = IsStruck;
             mover.SpeedMultiplier = struck ? struckSpeedMultiplier : 1f;
-            mover.SetMoveInput(live ? moveInput : Vector2.zero);
-            if (weapon.Value != 0 && Now >= weaponExpireTime.Value) weapon.Value = 0;
+            mover.SetMoveInput(live ? Vector2.ClampMagnitude(move, 1f) : Vector2.zero);
+            if (aimDirection.sqrMagnitude > 0.0001f)
+            {
+                aimDirection.Normalize();
+                if (Vector2.Angle(aim.Value, aimDirection) > aimSyncAngle) aim.Value = aimDirection;
+            }
+            if (aimIndicator != null) aimIndicator.Point(aimDirection);
+            if (live && fire && !struck) TryFire(aimDirection);
+        }
 
+        void TryFire(Vector2 direction)
+        {
             MPWeapon current = Weapon;
-            if (!live || !firing || struck || Time.time < nextFireTime || current == null) return;
+            if (current == null || Time.time < nextFireTime || direction.sqrMagnitude < 0.0001f) return;
             nextFireTime = Time.time + current.FireCooldown;
-            Vector2 origin = (Vector2)transform.position + aimInput * spawnOffset;
-            MPMatch.Instance.FireWeapon(current, Team, Slot, origin, aimInput, NetworkObjectId);
+            Vector2 origin = (Vector2)transform.position + direction * spawnOffset;
+            if (++shotSequence == 0) shotSequence = 1;
+            // A client shows its shot right away; the host's projectiles take over these copies when they arrive.
+            if (!IsServer && MPMatch.Instance != null) MPMatch.Instance.PredictWeapon(current, Team, origin, direction, NetworkObjectId, shotSequence);
+            ShootRpc(origin, direction, shotSequence);
+        }
+
+        // Owner: dashes at once. The host checks the cooldown and shows the dash to everyone else.
+        public bool TryDash(Vector2 direction)
+        {
+            if (!IsOwner || !MPMatch.InProgress || direction.sqrMagnitude < 0.0001f || DashCooldownRemaining > 0f) return false;
+            direction.Normalize();
+            if (!mover.TryDash(direction)) return false;
+            predictedDashReady = Time.time + dashCooldown;
+            Dashed?.Invoke(direction);
+            RequestDashRpc(direction);
+            return true;
+        }
+
+        // Owner: the host moved us back (we moved farther than the movement check allows).
+        [Rpc(SendTo.Owner)]
+        void CorrectPositionRpc(Vector2 position)
+        {
+            networkTransform.Teleport(position, transform.rotation, transform.localScale);
+            body.position = position;
+            body.linearVelocity = Vector2.zero;
+        }
+
+        [Rpc(SendTo.Owner)]
+        void RejectShotRpc(ushort sequence)
+        {
+            if (MPMatch.Instance != null) MPMatch.Instance.CancelPrediction(sequence);
+        }
+
+        // ---------- Host ----------
+
+        float MaxBudget => mover.MoveSpeed * speedTolerance * burstSeconds;
+
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+        void ShootRpc(Vector2 origin, Vector2 direction, ushort sequence)
+        {
+            MPWeapon current = Weapon;
+            bool accepted = MPMatch.InProgress && !IsStruck && current != null && direction.sqrMagnitude > 0.0001f
+                && Time.time >= serverNextFireTime - current.FireCooldown * fireTimingGrace;
+            if (!accepted)
+            {
+                if (!IsOwnedByServer) RejectShotRpc(sequence);
+                return;
+            }
+            // Bunched messages may come a little early, but the long-run rate never beats the cooldown.
+            serverNextFireTime = Mathf.Max(Time.time, serverNextFireTime) + current.FireCooldown;
+            direction.Normalize();
+            // The owner is ahead of the host's view of it, so its muzzle position is used if it's plausible.
+            Vector2 expected = (Vector2)transform.position + direction * spawnOffset;
+            if (Vector2.Distance(origin, expected) > maxOriginError) origin = expected;
+            MPMatch.Instance.FireWeapon(current, Team, Slot, origin, direction, NetworkObjectId, IsOwnedByServer ? (ushort)0 : sequence);
+        }
+
+        // The host is the only judge of the cooldown; a dash it doesn't grant gets no movement allowance.
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+        void RequestDashRpc(Vector2 direction)
+        {
+            if (!MPMatch.InProgress || direction.sqrMagnitude < 0.0001f || Now < dashReadyTime.Value - dashGrace) return;
+            dashReadyTime.Value = Now + dashCooldown;
+            moveBudget += mover.DashDistance;
+            DashedRpc(direction.normalized);
+        }
+
+        [Rpc(SendTo.NotOwner)]
+        void DashedRpc(Vector2 direction) => Dashed?.Invoke(direction);
+
+        void Simulate()
+        {
+            if (weapon.Value != 0 && Now >= weaponExpireTime.Value) weapon.Value = 0;
+            if (!IsOwner) CheckMovement();
+        }
+
+        // Host, for remote players: movement allowance refills at (a bit over) full speed; moving farther than
+        // the allowance means a cheat or a broken client, so the owner is put back at its last valid position.
+        void CheckMovement()
+        {
+            Vector2 position = transform.position;
+            float deltaTime = Mathf.Max(Time.deltaTime, 0.0001f);
+            Vector2 step = position - lastCheckedPosition;
+            lastCheckedPosition = position;
+            observedVelocity = Vector2.Lerp(observedVelocity, step / deltaTime, 1f - Mathf.Exp(-12f * deltaTime));
+
+            float cap = MaxBudget;
+            moveBudget = moveBudget > cap
+                ? Mathf.MoveTowards(moveBudget, cap, cap * deltaTime)
+                : Mathf.Min(cap, moveBudget + mover.MoveSpeed * speedTolerance * deltaTime);
+            if (Time.time < checkResumeTime)
+            {
+                lastValidPosition = position;
+                return;
+            }
+            moveBudget -= step.magnitude;
+            if (moveBudget >= 0f)
+            {
+                lastValidPosition = position;
+                return;
+            }
+            // No allowance left after a correction, so repeating the trick gains nothing. The check pauses for a
+            // round trip while the correction arrives.
+            moveBudget = 0f;
+            checkResumeTime = Time.time + 0.5f;
+            CorrectPositionRpc(lastValidPosition);
         }
 
         // Host: equips a picked-up weapon. Another pickup replaces it and restarts the timer.
@@ -247,26 +374,16 @@ namespace LoveShot.Multiplayer
             weaponExpireTime.Value = Now + picked.Duration;
             weapon.Value = (byte)weaponIndex;
             // Fire right away with the new weapon instead of waiting out the old one's cooldown.
-            nextFireTime = Mathf.Min(nextFireTime, Time.time + 0.1f);
+            serverNextFireTime = Mathf.Min(serverNextFireTime, Time.time + 0.1f);
             EquippedRpc(weaponIndex);
         }
 
         [Rpc(SendTo.ClientsAndHost)]
-        void EquippedRpc(int weaponIndex) => Equipped?.Invoke(weaponIndex);
-
-        // The host is the only judge of the cooldown, so a modified client can't dash more often.
-        bool ServerTryDash(Vector2 direction)
+        void EquippedRpc(int weaponIndex)
         {
-            if (!MPMatch.InProgress || direction.sqrMagnitude < 0.0001f || Now < dashReadyTime.Value || mover.IsDashing) return false;
-            direction.Normalize();
-            if (!mover.TryDash(direction)) return false;
-            dashReadyTime.Value = Now + dashCooldown;
-            DashedRpc(direction);
-            return true;
+            if (IsOwner) nextFireTime = Mathf.Min(nextFireTime, Time.time + 0.1f);
+            Equipped?.Invoke(weaponIndex);
         }
-
-        [Rpc(SendTo.ClientsAndHost)]
-        void DashedRpc(Vector2 direction) => Dashed?.Invoke(direction);
 
         // Host: an enemy player's shot slows this player briefly, then it is immune for a moment.
         public bool TryStrike()

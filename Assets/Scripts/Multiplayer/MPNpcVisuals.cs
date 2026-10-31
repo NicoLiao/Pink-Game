@@ -16,6 +16,13 @@ namespace LoveShot.Multiplayer
         [Header("Feedback")]
         [SerializeField] Color flashColor = Color.white;
         [SerializeField, Min(0f)] float hitFlashDuration = 0.08f;
+        [Tooltip("How quickly the body color follows team changes (higher = snappier).")]
+        [SerializeField, Min(0.1f)] float colorBlendSpeed = 9f;
+        [Tooltip("Small symbol on an owned NPC showing its team's shape (hidden while neutral).")]
+        [SerializeField] SpriteRenderer badge;
+        [SerializeField] TeamStyle teamStyle;
+        [Tooltip("Squash on each hit (negative = wider).")]
+        [SerializeField, Range(-0.4f, 0.4f)] float hitSquish = -0.16f;
         [SerializeField, Min(1f)] float popScale = 1.5f;
         [SerializeField, Min(0.01f)] float popDuration = 0.3f;
         [SerializeField] HeartBurst burstPrefab;
@@ -30,6 +37,9 @@ namespace LoveShot.Multiplayer
         Vector3 bodyBaseScale = Vector3.one;
         float popStartTime = float.NegativeInfinity;
         float flashStartTime = float.NegativeInfinity;
+        SquashStretch squash;
+        Color displayColor;
+        bool hasColor;
 
         // Extra scale applied on top of the pop (special NPC animations write it every frame).
         public Vector3 ExtraScale { get; set; } = Vector3.one;
@@ -39,6 +49,7 @@ namespace LoveShot.Multiplayer
             capture = GetComponent<MPCapture>();
             npc = GetComponent<MPNpc>();
             if (body != null) bodyBaseScale = body.transform.localScale;
+            squash = GetComponentInChildren<SquashStretch>();
         }
 
         void OnEnable()
@@ -70,6 +81,7 @@ namespace LoveShot.Multiplayer
         void OnHit(int team)
         {
             flashStartTime = Time.time;
+            if (squash != null) squash.Squish(hitSquish);
             HeartBurst.Play(burstPrefab, transform.position, MPTeams.ColorOf(team), 0.5f, 3);
         }
 
@@ -79,10 +91,20 @@ namespace LoveShot.Multiplayer
             int owner = capture.Owner, capturer = capture.Capturer;
             float progress = capturer == MPTeams.Neutral ? 0f : capture.Progress;
             Color color = owner == MPTeams.Neutral
-                ? Color.Lerp(TeamUtil.NeutralColor, MPTeams.ColorOf(capturer), progress * neutralTint)
+                ? Color.Lerp(MPTeams.NeutralColor, MPTeams.ColorOf(capturer), progress * neutralTint)
                 : MPTeams.ColorOf(owner);
-            if (Time.time - flashStartTime < hitFlashDuration) color = Color.Lerp(color, flashColor, 0.6f);
-            body.color = color;
+            // Team changes blend over a few frames instead of snapping.
+            displayColor = hasColor ? Color.Lerp(displayColor, color, 1f - Mathf.Exp(-colorBlendSpeed * Time.deltaTime)) : color;
+            hasColor = true;
+            body.color = Time.time - flashStartTime < hitFlashDuration ? Color.Lerp(displayColor, flashColor, 0.6f) : displayColor;
+
+            if (badge != null)
+            {
+                Sprite symbol = teamStyle != null ? teamStyle.SymbolOf(owner) : null;
+                badge.enabled = symbol != null;
+                badge.sprite = symbol;
+                badge.color = MPTeams.ColorOf(owner);
+            }
 
             float t = (Time.time - popStartTime) / popDuration;
             float pop = t < 1f ? Mathf.Sin(t * Mathf.PI) * (popScale - 1f) : 0f;

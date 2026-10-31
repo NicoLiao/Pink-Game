@@ -96,6 +96,10 @@ namespace LoveShot.Multiplayer
         readonly NetworkList<MPScore> scores = new();
 
         readonly Dictionary<ushort, MPProjectile> projectiles = new();
+        // Client-side: own shots shown before the host confirms them (null once they hit), and ids whose
+        // copy already burst locally.
+        readonly Dictionary<uint, MPProjectile> predicted = new();
+        readonly HashSet<ushort> resolvedLocally = new();
         readonly Dictionary<ulong, int> slotsByClient = new();
         ushort nextProjectileId;
         bool spawned;
@@ -349,40 +353,113 @@ namespace LoveShot.Multiplayer
         // ---------- Projectiles ----------
 
         // Host only. Fires one weapon shot (all its pellets, spread evenly across the weapon's cone).
-        public void FireWeapon(MPWeapon weapon, int team, int creditSlot, Vector2 origin, Vector2 direction, ulong shooterObjectId)
+        // predictSequence (non-zero) is the owner's shot number: the owner already shows these pellets.
+        public void FireWeapon(MPWeapon weapon, int team, int creditSlot, Vector2 origin, Vector2 direction, ulong shooterObjectId,
+            ushort predictSequence = 0)
         {
             if (weapon == null || direction.sqrMagnitude < 0.0001f) return;
             MPShot shot = weapon.Shot;
             int pellets = weapon.Pellets;
             for (int i = 0; i < pellets; i++)
-            {
-                float angle = pellets == 1 ? 0f : Mathf.Lerp(-weapon.SpreadAngle / 2f, weapon.SpreadAngle / 2f, i / (pellets - 1f));
-                Fire(team, creditSlot, origin, Quaternion.Euler(0f, 0f, angle) * direction, shot, true, shooterObjectId);
-            }
+                Fire(team, creditSlot, origin, PelletDirection(weapon, direction, i), shot, true, shooterObjectId, PredictKey(predictSequence, i));
         }
+
+        static Vector2 PelletDirection(MPWeapon weapon, Vector2 direction, int pellet)
+        {
+            int pellets = weapon.Pellets;
+            float angle = pellets == 1 ? 0f : Mathf.Lerp(-weapon.SpreadAngle / 2f, weapon.SpreadAngle / 2f, pellet / (pellets - 1f));
+            return Quaternion.Euler(0f, 0f, angle) * direction;
+        }
+
+        // Identifies one predicted pellet: the owner's shot number and the pellet's index. 0 = not predicted.
+        static uint PredictKey(ushort sequence, int pellet) => sequence == 0 ? 0u : ((uint)sequence << 5) | (uint)(pellet & 31);
 
         // Host only. Fires an authoritative projectile and shows a visual copy on every client.
         // creditSlot is the player credited with its hits (an NPC's personal owner for NPC shots).
-        public void Fire(int team, int creditSlot, Vector2 origin, Vector2 direction, MPShot shot, bool fromPlayer, ulong shooterObjectId)
+        public void Fire(int team, int creditSlot, Vector2 origin, Vector2 direction, MPShot shot, bool fromPlayer, ulong shooterObjectId,
+            uint predictKey = 0)
         {
             if (!IsServer || projectilePrefab == null || direction.sqrMagnitude < 0.0001f) return;
-            ushort id = ++nextProjectileId;
+            if (++nextProjectileId == 0) nextProjectileId = 1;
+            ushort id = nextProjectileId;
             Vector2 velocity = direction.normalized * shot.Speed;
             MPProjectile projectile = Instantiate(projectilePrefab, origin, Quaternion.identity);
             projectile.Launch(this, id, team, creditSlot, velocity, shot, fromPlayer, shooterObjectId, authoritative: true);
             projectiles[id] = projectile;
-            SpawnProjectileRpc(id, origin, velocity, team, (byte)shot.Style, shot.Scale, (byte)shot.Bounces, shot.Lifetime, shot.ExplosionRadius);
+            SpawnProjectileRpc(id, origin, velocity, team, (byte)shot.Style, shot.Scale, (byte)shot.Bounces, shot.Lifetime, shot.ExplosionRadius,
+                shooterObjectId, predictKey);
         }
 
         [Rpc(SendTo.NotServer)]
         void SpawnProjectileRpc(ushort id, Vector2 origin, Vector2 velocity, int team, byte style, float scale, byte bounces, float lifetime,
-            float explosionRadius)
+            float explosionRadius, ulong shooterObjectId, uint predictKey)
         {
+            // Our own predicted shot: the copy already flying becomes this projectile (or already hit something).
+            if (predictKey != 0 && MPPlayer.Local != null && MPPlayer.Local.NetworkObjectId == shooterObjectId
+                && predicted.Remove(predictKey, out MPProjectile own))
+            {
+                if (own != null)
+                {
+                    own.AssignId(id);
+                    projectiles[id] = own;
+                }
+                else MarkResolved(id);
+                return;
+            }
             // Visual copy: power doesn't matter, the rest must match the host's flight exactly.
             var shot = new MPShot((ProjectileStyle)style, velocity.magnitude, 0f, lifetime, scale, bounces, explosionRadius);
             MPProjectile projectile = Instantiate(projectilePrefab, origin, Quaternion.identity);
-            projectile.Launch(this, id, team, MPTeams.Neutral, velocity, shot, false, 0, authoritative: false);
+            projectile.Launch(this, id, team, MPTeams.Neutral, velocity, shot, false, shooterObjectId, authoritative: false);
             projectiles[id] = projectile;
+        }
+
+        // Client, owner: shows its own weapon shot immediately, before the host confirms it.
+        public void PredictWeapon(MPWeapon weapon, int team, Vector2 origin, Vector2 direction, ulong shooterObjectId, ushort sequence)
+        {
+            if (IsServer || weapon == null || projectilePrefab == null) return;
+            // Unconfirmed leftovers (e.g. a weapon swap changed the pellet count) are cosmetic; don't let them pile up.
+            if (predicted.Count > 128) predicted.Clear();
+            MPShot shot = weapon.Shot;
+            for (int i = 0; i < weapon.Pellets; i++)
+            {
+                Vector2 velocity = PelletDirection(weapon, direction, i).normalized * shot.Speed;
+                MPProjectile projectile = Instantiate(projectilePrefab, origin, Quaternion.identity);
+                projectile.Launch(this, 0, team, MPTeams.Neutral, velocity, shot, true, shooterObjectId, authoritative: false);
+                uint key = PredictKey(sequence, i);
+                projectile.PredictKey = key;
+                predicted[key] = projectile;
+            }
+        }
+
+        // Client, owner: the host refused this shot (cooldown, lovestruck), so its predicted copies vanish.
+        public void CancelPrediction(ushort sequence)
+        {
+            for (int i = 0; i < 32; i++)
+                if (predicted.Remove(PredictKey(sequence, i), out MPProjectile projectile) && projectile != null) projectile.Remove(false);
+        }
+
+        // Client: a visual copy touched something it will very likely hit, so it bursts now instead of
+        // flying through until the host's word arrives. The host's later report of the same hit then stays quiet.
+        public void OnLocalImpact(MPProjectile projectile)
+        {
+            if (projectile.Id != 0) MarkResolved(projectile.Id);
+            else if (projectile.PredictKey != 0 && predicted.ContainsKey(projectile.PredictKey)) predicted[projectile.PredictKey] = null;
+            PlayImpact(projectile.transform.position, MPTeams.Neutral, 0f);
+        }
+
+        void MarkResolved(ushort id)
+        {
+            // Copies whose host shot missed are never reported; drop old ids before they could collide after wrapping.
+            if (resolvedLocally.Count > 256) resolvedLocally.Clear();
+            resolvedLocally.Add(id);
+        }
+
+        // Client: whether a copy flying for `team` would plausibly affect `target` (the host decides for real).
+        public bool LooksHittable(MPCapture target, int team)
+        {
+            if (target == null || !MPTeams.IsTeam(team) || target.Owner == team) return false;
+            if (target.Player != null) return !target.Player.IsConversionImmune;
+            return target.CanBeAffectedBy(team);
         }
 
         // Host: whether a hit credited to `creditSlot` would do anything to `target` (rockets only burst on those).
@@ -421,7 +498,8 @@ namespace LoveShot.Multiplayer
         [Rpc(SendTo.NotServer)]
         void RemoveProjectileRpc(ushort id, Vector2 position, int team, float explosionRadius)
         {
-            PlayImpact(position, team, explosionRadius);
+            // Explosions always play here; a heart that already burst locally doesn't burst twice.
+            if (!resolvedLocally.Remove(id) || explosionRadius > 0f) PlayImpact(position, team, explosionRadius);
             if (projectiles.TryGetValue(id, out MPProjectile projectile) && projectile != null) projectile.Remove(false);
         }
 

@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace LoveShot.Multiplayer
 {
-    // The main menu's Online Multiplayer pages: Host Game, Join Game (room code entry) and Back.
+    // The main menu's online pages: Host Game and Join Game on the main page, then room code entry.
     // Creates the NetworkManager (with MPConnection) on demand and shows progress and error messages.
     // Runs after MainMenu so reopening this page on return from a session isn't overridden by its default page.
     [DefaultExecutionOrder(100)]
@@ -12,8 +12,8 @@ namespace LoveShot.Multiplayer
         [SerializeField] MainMenu mainMenu;
         [Tooltip("NetworkManager prefab with UnityTransport and MPConnection.")]
         [SerializeField] MPConnection networkPrefab;
-        [SerializeField, Min(0)] int multiplayerPanel = 2;
-        [SerializeField, Min(0)] int joinPanel = 3;
+        [SerializeField, Min(0)] int multiplayerPanel = 0;
+        [SerializeField, Min(0)] int joinPanel = 1;
         [SerializeField] TMP_Text multiplayerStatus;
         [SerializeField] TMP_Text joinStatus;
         [SerializeField] TMP_InputField codeInput;
@@ -80,11 +80,6 @@ namespace LoveShot.Multiplayer
         public void BackToMultiplayer()
         {
             if (!busy) mainMenu.ShowPanel(multiplayerPanel);
-        }
-
-        public void BackToMain()
-        {
-            if (!busy) mainMenu.ShowPanel(0);
         }
 
         void Fail(TMP_Text label, string error)
