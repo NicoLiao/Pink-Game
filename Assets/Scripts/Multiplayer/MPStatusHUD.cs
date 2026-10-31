@@ -29,7 +29,7 @@ namespace LoveShot.Multiplayer
             if (nameText != null) nameText.text = $"YOU: {player.DisplayName}";
             if (teamText != null)
             {
-                teamText.text = player.Slot == team ? $"{MPTeams.NameOf(team).ToUpperInvariant()} TEAM" : $"NOW {MPTeams.NameOf(team).ToUpperInvariant()} TEAM";
+                teamText.text = (MPLobby.Instance != null ? MPLobby.Instance.TeamOfSlot(player.Slot) : player.Slot) == team ? $"{MPTeams.NameOf(team).ToUpperInvariant()} TEAM" : $"NOW {MPTeams.NameOf(team).ToUpperInvariant()} TEAM";
                 teamText.color = MPTeams.TextColorOf(team);
             }
             if (teamSwatch != null)

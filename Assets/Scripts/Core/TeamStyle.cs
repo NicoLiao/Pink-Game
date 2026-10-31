@@ -7,7 +7,7 @@ namespace LoveShot
     [CreateAssetMenu(menuName = "LoveShot/Team Style")]
     public class TeamStyle : ScriptableObject
     {
-        [Tooltip("Symbol per team slot: 0 Pink (heart), 1 Berry (star), 2 Coral (flower), 3 Blush (diamond).")]
+        [Tooltip("Symbol per team slot: 0 Pink (heart), 1 Berry (moon), 2 Coral (flower), 3 Blush (diamond).")]
         [SerializeField] Sprite[] symbols;
 
         public Sprite SymbolOf(int slot) => symbols != null && slot >= 0 && slot < symbols.Length ? symbols[slot] : null;

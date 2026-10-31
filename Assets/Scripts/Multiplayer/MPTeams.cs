@@ -28,7 +28,7 @@ namespace LoveShot.Multiplayer
             new Color(0.78f, 0.38f, 0.55f),
         };
 
-        // Every team is a shade of pink; TeamStyle gives each its own symbol (heart, star, flower, diamond).
+        // Every team is a shade of pink; TeamStyle gives each its own symbol (heart, moon, flower, diamond).
         static readonly string[] names = { "Pink", "Berry", "Coral", "Blush" };
 
         public static bool IsTeam(int team) => team >= 0 && team < MaxTeams;

@@ -15,7 +15,7 @@ namespace LoveShot.Multiplayer
     // fires the authoritative projectiles and resolves every hit, lovestruck slow and conversion.
     //
     // Identity vs allegiance: Slot is permanent (lobby slot, name, identity color). Team is the team the
-    // player currently fights for (its MPCapture owner); it starts equal to Slot and changes when another
+    // player currently fights for (its MPCapture owner); it starts as the lobby team (own slot in FFA, side 0 or 1 in 2v2) and changes when another
     // team converts the player. A converted player keeps full control and takes their own NPCs along.
     [RequireComponent(typeof(Mover), typeof(MPCapture))]
     public class MPPlayer : NetworkBehaviour
@@ -155,11 +155,11 @@ namespace LoveShot.Multiplayer
             skills = GetComponents<Skill>();
         }
 
-        // Host, before spawning: the permanent slot, which is also the starting team.
-        public void InitSlot(int playerSlot)
+        // Host, before spawning: the permanent slot (identity) and the team the lobby assigned it.
+        public void InitSlot(int playerSlot, int startTeam)
         {
             slot.Value = playerSlot;
-            capture.InitOwner(playerSlot, playerSlot);
+            capture.InitOwner(startTeam, playerSlot);
         }
 
         public override void OnNetworkSpawn()

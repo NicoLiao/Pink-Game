@@ -202,7 +202,7 @@ namespace LoveShot.Multiplayer
             {
                 Vector2 position = playerSpawns[info.Slot % playerSpawns.Length];
                 NetworkObject player = Instantiate(playerPrefab, position, Quaternion.identity);
-                player.GetComponent<MPPlayer>().InitSlot(info.Slot);
+                player.GetComponent<MPPlayer>().InitSlot(info.Slot, lobby.TeamOfSlot(info.Slot));
                 player.SpawnAsPlayerObject(info.ClientId, destroyWithScene: true);
                 slotsByClient[info.ClientId] = info.Slot;
             }

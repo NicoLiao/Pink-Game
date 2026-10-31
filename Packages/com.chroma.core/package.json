@@ -1,0 +1,10 @@
+{
+  "name": "com.chroma.core",
+  "displayName": "Chroma Core",
+  "version": "0.1.0",
+  "unity": "6000.6",
+  "description": "Monochrome (Okhsl) color stylization pipeline imported from Chroma.",
+  "dependencies": {
+    "com.unity.render-pipelines.universal": "17.6.0"
+  }
+}
