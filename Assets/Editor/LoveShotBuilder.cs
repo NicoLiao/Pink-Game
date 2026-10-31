@@ -23,6 +23,8 @@ namespace LoveShot.EditorTools
         // Everything that depends on the arena size (walls, camera, spawns, AI reposition area) derives from these.
         const float ArenaHalfWidth = 18f, ArenaHalfHeight = 10f, WallThickness = 2f;
         const float LeaderSpawnX = 15f;
+        // Every projectile flies this much faster than the original tuning; lifetimes are divided by it so reach stays the same.
+        const float ProjectileSpeedScale = 1.5f;
         // Initial camera framing for the Scene/Game view in edit mode; ArenaCamera refits it at runtime
         // for the actual screen size and HUD.
         const float CameraSize = 12.2f, CameraOffsetY = 1.2f;
@@ -35,7 +37,11 @@ namespace LoveShot.EditorTools
         static readonly Color DeepPink = new Color(0.9f, 0.25f, 0.55f);
         static readonly Color SoftPlum = new Color(0.45f, 0.28f, 0.42f);
 
-        struct Sprites { public Sprite Circle, Ring, Square, Heart, RoundedRect, DashIcon; }
+        struct Sprites
+        {
+            public Sprite Circle, Ring, Square, Heart, RoundedRect, DashIcon, Rocket, Arrow, Crown, BounceIcon, ShotgunIcon;
+            public Texture2D AimCursor;
+        }
 
         [MenuItem("LoveShot/Rebuild Arena + Menu")]
         static void BuildFromMenu()
@@ -79,6 +85,7 @@ namespace LoveShot.EditorTools
             RectTransform hudTopBar = CreateHud(new GameObject("Match Manager").AddComponent<MatchManager>());
             SkillBarUI skillBar = CreateSkillBar(GameObject.Find("HUD").transform, skillSlot);
             SetField(skillBar, "player", player);
+            SetField(GameObject.Find("HUD").AddComponent<AimCursor>(), "cursorTexture", sprites.AimCursor);
             var arenaCamera = camera.gameObject.AddComponent<ArenaCamera>();
             SetField(arenaCamera, "interiorHalfExtents", new Vector2(ArenaHalfWidth, ArenaHalfHeight));
             SetField(arenaCamera, "arenaBounds", Object.FindAnyObjectByType<ArenaBounds>());
@@ -125,7 +132,120 @@ namespace LoveShot.EditorTools
                         if (Mathf.Abs(x - cx - (0.5f - ay) * 0.8f) < 0.16f) return true;
                     return false;
                 }),
+                // Multiplayer: projectiles point right (+x) and are rotated to their velocity.
+                Rocket = MakeSprite("Rocket", 64, (x, y) =>
+                {
+                    float ay = Mathf.Abs(y);
+                    if (x >= -0.55f && x <= 0.35f && ay < 0.26f) return true;
+                    if (x > 0.35f && x <= 0.9f && ay < 0.26f * (0.9f - x) / 0.55f) return true;
+                    return x >= -0.85f && x < -0.35f && ay < Mathf.Min(0.62f, 0.26f + 0.36f * (-0.35f - x) / 0.5f);
+                }),
+                Arrow = MakeSprite("Arrow", 64, (x, y) =>
+                {
+                    float ay = Mathf.Abs(y);
+                    if (x >= -0.85f && x <= 0.45f && ay < 0.07f) return true;
+                    if (x > 0.3f && x <= 0.95f && ay < 0.38f * (0.95f - x) / 0.65f) return true;
+                    return x >= -0.98f && x < -0.55f && ay < 0.06f + 0.26f * (-0.55f - x) / 0.43f && ay > 0.04f;
+                }),
+                Crown = MakeSprite("Crown", 64, (x, y) =>
+                {
+                    if (Mathf.Abs(x) < 0.78f && y >= -0.6f && y <= -0.25f) return true;
+                    foreach (float cx in new[] { -0.58f, 0f, 0.58f })
+                    {
+                        if (y > -0.25f && y < 0.5f && Mathf.Abs(x - cx) < 0.3f * (0.5f - y) / 0.75f) return true;
+                        if ((x - cx) * (x - cx) + (y - 0.56f) * (y - 0.56f) < 0.13f * 0.13f) return true;
+                    }
+                    return false;
+                }),
+                // Weapon icons (the Default Gun uses Heart).
+                BounceIcon = MakeSprite("WeaponBounceIcon", 64, (x, y) =>
+                {
+                    Vector2[] path = { new(-0.85f, 0.45f), new(-0.4f, -0.55f), new(0.1f, 0.45f), new(0.55f, -0.55f) };
+                    for (int i = 0; i < path.Length - 1; i++)
+                        if (SegmentDistance(new Vector2(x, y), path[i], path[i + 1]) < 0.12f) return true;
+                    return (x - 0.72f) * (x - 0.72f) + (y + 0.12f) * (y + 0.12f) < 0.2f * 0.2f;
+                }),
+                ShotgunIcon = MakeSprite("WeaponShotgunIcon", 64, (x, y) =>
+                {
+                    if (x >= -0.95f && x <= -0.4f && Mathf.Abs(y) < 0.17f) return true;
+                    for (int i = 0; i < 5; i++)
+                    {
+                        float angle = Mathf.Lerp(-38f, 38f, i / 4f) * Mathf.Deg2Rad;
+                        float cx = -0.55f + 1.25f * Mathf.Cos(angle), cy = 1.25f * Mathf.Sin(angle);
+                        if ((x - cx) * (x - cx) + (y - cy) * (y - cy) < 0.16f * 0.16f) return true;
+                    }
+                    return false;
+                }),
+                AimCursor = MakeCursor("AimCursor", 48),
             };
+        }
+
+        // Crosshair cursor for the arenas: ring, four ticks and a center dot in hot pink with a dark outline,
+        // so it reads on the light floor and over pink characters. Imported as a Cursor texture.
+        static Texture2D MakeCursor(string name, int size)
+        {
+            bool Shape(float x, float y)
+            {
+                float r = Mathf.Sqrt(x * x + y * y);
+                if (r >= 0.5f && r <= 0.64f) return true;
+                if (r <= 0.1f) return true;
+                float ax = Mathf.Abs(x), ay = Mathf.Abs(y);
+                return (ax < 0.07f && ay > 0.28f && ay < 0.86f) || (ay < 0.07f && ax > 0.28f && ax < 0.86f);
+            }
+            bool Outline(float x, float y)
+            {
+                const float d = 0.09f;
+                for (int i = 0; i < 8; i++)
+                {
+                    float angle = i * Mathf.PI / 4f;
+                    if (Shape(x + Mathf.Cos(angle) * d, y + Mathf.Sin(angle) * d)) return true;
+                }
+                return false;
+            }
+
+            const int samples = 4;
+            var fill = new Color(1f, 0.3f, 0.62f);
+            var edge = new Color(0.28f, 0.12f, 0.24f);
+            var pixels = new Color[size * size];
+            for (int py = 0; py < size; py++)
+            for (int px = 0; px < size; px++)
+            {
+                int inside = 0, outline = 0;
+                for (int sy = 0; sy < samples; sy++)
+                for (int sx = 0; sx < samples; sx++)
+                {
+                    float x = (px + (sx + 0.5f) / samples) / size * 2f - 1f;
+                    float y = (py + (sy + 0.5f) / samples) / size * 2f - 1f;
+                    if (Shape(x, y)) inside++;
+                    else if (Outline(x, y)) outline++;
+                }
+                float total = samples * samples;
+                float alpha = (inside + outline) / total;
+                Color color = alpha > 0f ? Color.Lerp(edge, fill, inside / (float)(inside + outline)) : Color.clear;
+                pixels[py * size + px] = new Color(color.r, color.g, color.b, alpha);
+            }
+
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            texture.SetPixels(pixels);
+            string path = $"{ArtDir}/{name}.png";
+            File.WriteAllBytes(path, texture.EncodeToPNG());
+            Object.DestroyImmediate(texture);
+
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+            var importer = (TextureImporter)AssetImporter.GetAtPath(path);
+            importer.textureType = TextureImporterType.Cursor;
+            importer.alphaIsTransparency = true;
+            importer.mipmapEnabled = false;
+            importer.wrapMode = TextureWrapMode.Clamp;
+            importer.SaveAndReimport();
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        static float SegmentDistance(Vector2 point, Vector2 a, Vector2 b)
+        {
+            Vector2 ab = b - a;
+            float t = Mathf.Clamp01(Vector2.Dot(point - a, ab) / ab.sqrMagnitude);
+            return Vector2.Distance(point, a + ab * t);
         }
 
         // inside(x, y) is sampled over [-1, 1]²; 4x4 supersampling gives soft edges.
@@ -187,7 +307,7 @@ namespace LoveShot.EditorTools
             collider.isTrigger = true;
             collider.radius = 0.4f;
 
-            go.AddComponent<Projectile>();
+            SetField(go.AddComponent<Projectile>(), "lifetime", 2f / ProjectileSpeedScale);
             return SavePrefab(go, "LoveProjectile");
         }
 
@@ -217,6 +337,7 @@ namespace LoveShot.EditorTools
             var shooter = go.AddComponent<Shooter>();
             SetField(shooter, "team", (int)team);
             SetField(shooter, "projectilePrefab", projectile.GetComponent<Projectile>());
+            SetField(shooter, "projectileSpeed", 12f * ProjectileSpeedScale);
 
             var leader = go.AddComponent<TeamLeader>();
             SetField(leader, "team", (int)team);
@@ -417,7 +538,7 @@ namespace LoveShot.EditorTools
             SetField(shooter, "team", (int)Team.Neutral);
             SetField(shooter, "projectilePrefab", projectile.GetComponent<Projectile>());
             SetField(shooter, "fireCooldown", 0.9f);
-            SetField(shooter, "projectileSpeed", 10f);
+            SetField(shooter, "projectileSpeed", 10f * ProjectileSpeedScale);
             SetField(shooter, "affectionPerHit", 10f);
             SetField(shooter, "spawnOffset", bodyScale / 2f + 0.1f);
 
@@ -542,7 +663,6 @@ namespace LoveShot.EditorTools
 
             // Top-center bar: PINK n | m:ss | n BLUE
             RectTransform bar = CreateRect("TopBar", root, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -16f), new Vector2(760f, 100f));
-            AddImage(bar, new Color(1f, 1f, 1f, 0.85f));
             var layout = bar.gameObject.AddComponent<UnityEngine.UI.HorizontalLayoutGroup>();
             layout.childControlWidth = layout.childControlHeight = true;
             layout.childForceExpandWidth = layout.childForceExpandHeight = true;

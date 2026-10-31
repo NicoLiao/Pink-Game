@@ -170,5 +170,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f1008a07944eeb749ab9e2d01bf5c4cc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPProjectile
-  lifetime: 2
   sprite: {fileID: 3179512140561105720}
+  styleSprites:
+  - {fileID: 21300000, guid: 08185a10160b05d4990b03903f33721b, type: 3}
+  - {fileID: 21300000, guid: 0dbbdbe17b4e9c147841b7d88a2a8525, type: 3}
+  - {fileID: 21300000, guid: 5d2199d19e2490d4c8a7ea5f8466561e, type: 3}
+  wallMask:
+    serializedVersion: 2
+    m_Bits: 64
+  trailPrefab: {fileID: 8599745726365794670, guid: 46d544cdbcf16954fb1b362b6e23baad, type: 3}
+  trailInterval: 0.05

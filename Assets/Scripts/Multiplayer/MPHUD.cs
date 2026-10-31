@@ -3,14 +3,13 @@ using UnityEngine;
 
 namespace LoveShot.Multiplayer
 {
-    // Multiplayer HUD: timer, 3-2-1-GO, a live leaderboard of team sizes, your skill bar, and the results
-    // screen (winner, final sizes and ranks, Return to Lobby for the host, Main Menu for everyone).
+    // Multiplayer HUD: timer, 3-2-1-GO, a live team leaderboard (members + points), your skill bar, and the results
+    // screen (winning team, final points and ranks, Return to Lobby for the host, Main Menu for everyone).
     // Row i of each array belongs together (root, color swatch, name label, count label).
     public class MPHUD : MonoBehaviour
     {
         [SerializeField] TMP_Text timerText;
         [SerializeField] TMP_Text countdownText;
-        [SerializeField] TMP_Text youText;
         [SerializeField] SkillBarUI skillBar;
 
         [Header("Leaderboard")]
@@ -77,11 +76,6 @@ namespace LoveShot.Multiplayer
             UpdateTimer(match);
             UpdateCountdown(match);
             UpdateLeaderboard(match);
-            if (youText != null && MPPlayer.Local != null)
-            {
-                youText.text = $"YOU: {MPPlayer.Local.DisplayName}";
-                youText.color = MPTeams.TextColorOf(MPPlayer.Local.Team);
-            }
             if (match != null && match.Phase == MPMatch.MatchPhase.Ended) ShowResults(match);
             FadeCoveringPanels();
         }
@@ -163,7 +157,7 @@ namespace LoveShot.Multiplayer
                 else
                 {
                     MPScore top = ranking[0].score;
-                    resultTitle.text = $"{NameOf(top).ToUpperInvariant()} WINS!";
+                    resultTitle.text = $"{TeamName(top.Team).ToUpperInvariant()} WINS!";
                     resultTitle.color = MPTeams.TextColorOf(top.Team);
                 }
             }
@@ -188,24 +182,38 @@ namespace LoveShot.Multiplayer
                 if (!used) continue;
 
                 (MPScore score, int rank) = ranking[i];
-                bool isLocal = MPPlayer.Local != null && MPPlayer.Local.Team == score.Team;
                 if (i < swatches.Length && swatches[i] != null) swatches[i].color = MPTeams.ColorOf(score.Team);
                 if (i < names.Length && names[i] != null)
                 {
                     string prefix = withRank ? $"{ordinals[Mathf.Clamp(rank - 1, 0, ordinals.Length - 1)]}  " : "";
-                    names[i].text = prefix + NameOf(score) + (isLocal ? " (you)" : "");
+                    // Team on the first line, its players (converted ones included) smaller underneath.
+                    names[i].text = $"{prefix}{TeamName(score.Team).ToUpperInvariant()}\n<size=72%>{MembersText(score.Team)}</size>";
                     names[i].color = MPTeams.TextColorOf(score.Team);
-                    names[i].fontStyle = isLocal ? FontStyles.Bold | FontStyles.Underline : FontStyles.Bold;
                 }
                 if (i < counts.Length && counts[i] != null)
                 {
-                    counts[i].text = withRank ? $"{score.Count} NPC{(score.Count == 1 ? "" : "s")}" : score.Count.ToString();
+                    counts[i].text = withRank ? $"{score.Points} pt{(score.Points == 1 ? "" : "s")}" : score.Points.ToString();
                     counts[i].color = MPTeams.TextColorOf(score.Team);
                 }
             }
         }
 
-        static string NameOf(MPScore score) => MPLobby.Instance != null ? MPLobby.Instance.NameOf(score.Team) : MPTeams.NameOf(score.Team);
+        // "Alice" for a solo team, "Alice + Bob" once players have been converted into it.
+        static string MembersText(int team)
+        {
+            var members = MPMatch.MembersOf(team);
+            if (members.Count == 0) return TeamName(team);
+            var text = new System.Text.StringBuilder();
+            foreach (MPPlayer member in members)
+            {
+                if (text.Length > 0) text.Append(" + ");
+                text.Append(member.DisplayName);
+                if (member == MPPlayer.Local) text.Append(" (you)");
+            }
+            return text.ToString();
+        }
+
+        static string TeamName(int team) => $"{MPTeams.NameOf(team)} team";
 
         // Buttons.
         public void ReturnToLobby()

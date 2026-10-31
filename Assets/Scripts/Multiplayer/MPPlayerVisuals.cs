@@ -4,18 +4,29 @@ using UnityEngine;
 
 namespace LoveShot.Multiplayer
 {
-    // Look of a networked player on every machine: team colors, a name tag ("YOU" for the local player),
-    // a ring marking your own character, flicker while lovestruck, and dash afterimages and burst.
+    // Look of a networked player on every machine: body in the current team's color (blending over when
+    // converted), a heart mark in the player's own identity color, a name tag ("YOU" for the local player),
+    // a ring marking your own character, a pulsing shield while conversion-immune, flicker while lovestruck,
+    // a big heart burst on conversion, and dash afterimages.
     [RequireComponent(typeof(MPPlayer))]
     public class MPPlayerVisuals : MonoBehaviour
     {
         [SerializeField] SpriteRenderer body;
         [SerializeField] SpriteRenderer aimMarker;
         [SerializeField] SpriteRenderer localRing;
+        [Tooltip("Heart in the player's own (identity) color, so a converted player is still recognizable.")]
+        [SerializeField] SpriteRenderer identityMark;
+        [Tooltip("Ring shown while the player is conversion-immune.")]
+        [SerializeField] SpriteRenderer immunityShield;
         [SerializeField] TMP_Text nameTag;
         [SerializeField] HeartBurst burstPrefab;
         [SerializeField] Color struckTint = Color.white;
         [SerializeField, Min(0f)] float struckWobble = 0.15f;
+
+        [Header("Conversion")]
+        [SerializeField, Min(0.01f)] float colorBlendDuration = 0.6f;
+        [SerializeField, Min(1f)] float convertPopScale = 1.6f;
+        [SerializeField, Min(0f)] float convertShake = 0.45f;
 
         [Header("Dash")]
         [SerializeField, Min(0.05f)] float dashVisualDuration = 0.2f;
@@ -32,6 +43,8 @@ namespace LoveShot.Multiplayer
 
         MPPlayer player;
         Color teamColor;
+        Color previousTeamColor;
+        float convertedTime = float.NegativeInfinity;
         Vector3 bodyScale;
         float dashVisualUntil = float.NegativeInfinity;
         float nextAfterimageTime;
@@ -47,29 +60,33 @@ namespace LoveShot.Multiplayer
         {
             player.Dashed += OnDashed;
             player.Struck += OnStruck;
+            player.Converted += OnConverted;
         }
 
         void OnDisable()
         {
             player.Dashed -= OnDashed;
             player.Struck -= OnStruck;
+            player.Converted -= OnConverted;
             foreach (Afterimage afterimage in afterimages)
                 if (afterimage.Renderer != null) Destroy(afterimage.Renderer.gameObject);
             afterimages.Clear();
         }
 
-        void Start() => ApplyTeam();
-
-        void ApplyTeam()
+        void Start()
         {
-            teamColor = MPTeams.ColorOf(player.Team);
-            if (body != null) body.color = teamColor;
-            if (aimMarker != null) aimMarker.color = teamColor;
-            if (localRing != null)
-            {
-                localRing.enabled = player.IsOwner;
-                localRing.color = new Color(teamColor.r, teamColor.g, teamColor.b, 0.5f);
-            }
+            teamColor = previousTeamColor = MPTeams.ColorOf(player.Team);
+            if (localRing != null) localRing.enabled = player.IsOwner;
+            if (identityMark != null) identityMark.color = MPTeams.ColorOf(player.Slot);
+        }
+
+        void OnConverted(int previous, int current)
+        {
+            previousTeamColor = MPTeams.ColorOf(previous);
+            convertedTime = Time.time;
+            HeartBurst.Play(burstPrefab, transform.position, MPTeams.ColorOf(current), 2f, 18);
+            HeartBurst.Play(burstPrefab, transform.position, previousTeamColor, 1.2f, 8);
+            if (player.IsOwner) CameraShake.Shake(convertShake);
         }
 
         void OnDashed(Vector2 direction)
@@ -88,10 +105,28 @@ namespace LoveShot.Multiplayer
 
         void LateUpdate()
         {
+            float blend = Mathf.Clamp01((Time.time - convertedTime) / colorBlendDuration);
+            teamColor = Color.Lerp(previousTeamColor, MPTeams.ColorOf(player.Team), blend);
+            if (aimMarker != null) aimMarker.color = teamColor;
+            if (localRing != null) localRing.color = new Color(teamColor.r, teamColor.g, teamColor.b, 0.5f);
+
             if (nameTag != null)
             {
                 nameTag.text = player.IsOwner ? $"{player.DisplayName} (YOU)" : player.DisplayName;
                 nameTag.color = MPTeams.TextColorOf(player.Team);
+            }
+
+            if (immunityShield != null)
+            {
+                bool immune = player.IsConversionImmune;
+                immunityShield.enabled = immune;
+                if (immune)
+                {
+                    // Pulses faster in the last second, so everyone can see it running out.
+                    float speed = player.ConversionImmunityRemaining < 1f ? 22f : 9f;
+                    immunityShield.color = new Color(1f, 1f, 1f, 0.45f + 0.35f * Mathf.Sin(Time.time * speed));
+                    immunityShield.transform.localScale = Vector3.one * (1.55f + 0.08f * Mathf.Sin(Time.time * speed * 0.5f));
+                }
             }
 
             if (body != null)
@@ -99,7 +134,9 @@ namespace LoveShot.Multiplayer
                 bool struck = player.IsStruck;
                 float pulse = struck ? 0.5f + 0.5f * Mathf.Sin(Time.time * 30f) : 0f;
                 body.color = Color.Lerp(teamColor, struckTint, pulse * 0.7f);
-                body.transform.localScale = bodyScale * (1f + (struck ? Mathf.Sin(Time.time * 22f) * struckWobble : 0f));
+                float t = (Time.time - convertedTime) / colorBlendDuration;
+                float pop = t < 1f ? Mathf.Sin(t * Mathf.PI) * (convertPopScale - 1f) : 0f;
+                body.transform.localScale = bodyScale * (1f + pop + (struck ? Mathf.Sin(Time.time * 22f) * struckWobble : 0f));
             }
 
             if (Time.time < dashVisualUntil && body != null && Time.time >= nextAfterimageTime)

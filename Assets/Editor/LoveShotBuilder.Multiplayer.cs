@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using LoveShot.Multiplayer;
 using Unity.Netcode;
@@ -17,6 +18,7 @@ namespace LoveShot.EditorTools
     {
         const string MPPrefabDir = "Assets/Prefabs/Multiplayer";
         const string NetworkSettingsDir = "Assets/Settings/Network";
+        const string WeaponSettingsDir = "Assets/Settings/Weapons";
         const string MPLobbyScenePath = "Assets/Scenes/MPLobby.unity";
         const string MPArenaScenePath = "Assets/Scenes/MPArena.unity";
 
@@ -29,14 +31,21 @@ namespace LoveShot.EditorTools
         {
             Directory.CreateDirectory(MPPrefabDir);
             Directory.CreateDirectory(NetworkSettingsDir);
+            Directory.CreateDirectory(WeaponSettingsDir);
 
-            MPProjectile projectile = CreateMPProjectilePrefab(sprites);
+            HeartRing ring = CreateHeartRingPrefab(sprites);
+            MPWeapon[] weapons = EnsureWeaponAssets(sprites);
+            MPProjectile projectile = CreateMPProjectilePrefab(sprites, burst, obstacleLayer);
             GameObject player = CreateMPPlayerPrefab(sprites, burst);
-            GameObject npc = CreateMPNpcPrefab(sprites, burst, obstacleLayer);
-            GameObject match = CreateMPMatchPrefab(player, npc, projectile, burst);
+            FloatingText popup = CreateFloatingTextPrefab();
+            MPNpcType[] npcTypes = CreateMPNpcPrefabs(sprites, burst, ring, popup, obstacleLayer);
+            GameObject pickup = CreatePickupPrefab(sprites, burst);
+            GameObject match = CreateMPMatchPrefab(player, npcTypes, projectile, burst, ring, weapons, pickup);
             GameObject lobby = SaveMPPrefab(new GameObject("MPLobby", typeof(NetworkObject), typeof(MPLobby)), "MPLobby");
 
-            NetworkPrefabsList prefabList = CreateNetworkPrefabList(player, npc, match, lobby);
+            var networked = new System.Collections.Generic.List<GameObject> { player, match, lobby, pickup };
+            foreach (MPNpcType npcType in npcTypes) networked.Add(npcType.Prefab);
+            NetworkPrefabsList prefabList = CreateNetworkPrefabList(networked.ToArray());
             GameObject networkManager = CreateNetworkManagerPrefab(prefabList, lobby);
 
             string slotPath = AssetDatabase.GetAssetPath(skillSlot);
@@ -44,6 +53,113 @@ namespace LoveShot.EditorTools
             BuildMPLobbyScene(sprites);
             BuildMPArenaScene(sprites, obstacleLayer, matchPath, slotPath);
             return AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GetAssetPath(networkManager));
+        }
+
+        // ---------- Weapons ----------
+
+        // Created only if missing (like the difficulty assets), so tuning done in the assets survives a rebuild.
+        // Icons are generated sprites, so they're re-assigned every time.
+        static MPWeapon[] EnsureWeaponAssets(Sprites sprites)
+        {
+            MPWeapon LoadOrCreate(string name, Sprite icon, Action<MPWeapon> configure)
+            {
+                string path = $"{WeaponSettingsDir}/{name}.asset";
+                var asset = AssetDatabase.LoadAssetAtPath<MPWeapon>(path);
+                if (asset == null)
+                {
+                    asset = ScriptableObject.CreateInstance<MPWeapon>();
+                    AssetDatabase.CreateAsset(asset, path);
+                    configure(asset);
+                }
+                SetField(asset, "icon", icon);
+                EditorUtility.SetDirty(asset);
+                return asset;
+            }
+
+            var weapons = new[]
+            {
+                LoadOrCreate("DefaultGun", sprites.Heart, w =>
+                {
+                    SetField(w, "displayName", "Love Gun");
+                    SetField(w, "fireCooldown", 0.25f);
+                    SetField(w, "projectileSpeed", 12f * ProjectileSpeedScale);
+                    SetField(w, "power", 20f);
+                    SetField(w, "lifetime", 2f / ProjectileSpeedScale);
+                }),
+                LoadOrCreate("BounceGun", sprites.BounceIcon, w =>
+                {
+                    SetField(w, "displayName", "Bounce Gun");
+                    SetField(w, "fireCooldown", 0.3f);
+                    SetField(w, "projectileSpeed", 13f * ProjectileSpeedScale);
+                    SetField(w, "power", 16f);
+                    SetField(w, "lifetime", 2.6f / ProjectileSpeedScale);
+                    SetField(w, "bounces", 3);
+                }),
+                LoadOrCreate("Shotgun", sprites.ShotgunIcon, w =>
+                {
+                    SetField(w, "displayName", "Shotgun");
+                    SetField(w, "fireCooldown", 0.8f);
+                    SetField(w, "pellets", 5);
+                    SetField(w, "spreadAngle", 36f);
+                    SetField(w, "projectileSpeed", 15f * ProjectileSpeedScale);
+                    SetField(w, "power", 9f);
+                    SetField(w, "lifetime", 0.36f / ProjectileSpeedScale);
+                    SetField(w, "projectileScale", 0.8f);
+                }),
+                LoadOrCreate("RocketLauncher", sprites.Rocket, w =>
+                {
+                    SetField(w, "displayName", "Rocket Launcher");
+                    SetField(w, "fireCooldown", 1.3f);
+                    SetField(w, "style", (int)ProjectileStyle.Rocket);
+                    SetField(w, "projectileSpeed", 8f * ProjectileSpeedScale);
+                    SetField(w, "power", 70f);
+                    SetField(w, "lifetime", 1.6f / ProjectileSpeedScale);
+                    SetField(w, "projectileScale", 1.7f);
+                    SetField(w, "explosionRadius", 3f);
+                    SetField(w, "explosionEdgePower", 0.35f);
+                }),
+            };
+            AssetDatabase.SaveAssets();
+            return weapons;
+        }
+
+        static GameObject CreatePickupPrefab(Sprites sprites, HeartBurst burst)
+        {
+            var go = new GameObject("MPWeaponPickup", typeof(NetworkObject));
+            var trigger = go.AddComponent<CircleCollider2D>();
+            trigger.isTrigger = true;
+            trigger.radius = 0.65f;
+            var visual = new GameObject("Visual").transform;
+            visual.SetParent(go.transform, false);
+            SpriteRenderer glow = AddSprite(visual, "Glow", sprites.Ring, new Color(1f, 0.75f, 0.3f, 0.9f), Vector2.zero, Vector2.one * 1.25f, 3);
+            AddSprite(visual, "Badge", sprites.Circle, Color.white, Vector2.zero, Vector2.one * 1.05f, 4);
+            SpriteRenderer icon = AddSprite(visual, "Icon", sprites.Heart, DeepPink, Vector2.zero, Vector2.one * 0.75f, 5);
+            var pickup = go.AddComponent<MPWeaponPickup>();
+            SetField(pickup, "icon", icon);
+            SetField(pickup, "glow", glow);
+            SetField(pickup, "visualRoot", visual);
+            SetField(pickup, "burstPrefab", burst);
+            return SaveMPPrefab(go, "MPWeaponPickup");
+        }
+
+        static FloatingText CreateFloatingTextPrefab()
+        {
+            var label = new GameObject("FloatingText").AddComponent<TMPro.TextMeshPro>();
+            label.rectTransform.sizeDelta = new Vector2(3f, 1f);
+            label.fontSize = 5f;
+            label.fontStyle = TMPro.FontStyles.Bold;
+            label.alignment = TMPro.TextAlignmentOptions.Center;
+            label.sortingOrder = 40;
+            label.gameObject.AddComponent<FloatingText>();
+            return SavePrefab(label.gameObject, "FloatingText").GetComponent<FloatingText>();
+        }
+
+        static HeartRing CreateHeartRingPrefab(Sprites sprites)
+        {
+            var ring = new GameObject("HeartRing").AddComponent<HeartRing>();
+            SetField(ring, "heartSprite", sprites.Heart);
+            SetField(ring, "ringSprite", sprites.Ring);
+            return SavePrefab(ring.gameObject, "HeartRing").GetComponent<HeartRing>();
         }
 
         // ---------- Prefabs ----------
@@ -67,7 +183,7 @@ namespace LoveShot.EditorTools
             go.AddComponent<NetworkRigidbody2D>();
         }
 
-        static MPProjectile CreateMPProjectilePrefab(Sprites sprites)
+        static MPProjectile CreateMPProjectilePrefab(Sprites sprites, HeartBurst burst, int obstacleLayer)
         {
             var go = new GameObject("MPLoveProjectile");
             go.transform.localScale = Vector3.one * 0.45f;
@@ -83,6 +199,11 @@ namespace LoveShot.EditorTools
             collider.radius = 0.4f;
             var projectile = go.AddComponent<MPProjectile>();
             SetField(projectile, "sprite", renderer);
+            var serialized = new SerializedObject(projectile);
+            SetArray(serialized.FindProperty("styleSprites"), sprites.Heart, sprites.Rocket, sprites.Arrow);
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            SetField(projectile, "wallMask", 1 << obstacleLayer);
+            SetField(projectile, "trailPrefab", burst);
             return SaveMPPrefab(go, "MPLoveProjectile").GetComponent<MPProjectile>();
         }
 
@@ -93,16 +214,25 @@ namespace LoveShot.EditorTools
             go.GetComponent<Rigidbody2D>().collisionDetectionMode = CollisionDetectionMode2D.Continuous;
             AddNetworkMotion(go);
 
-            // Colors are applied at runtime from the player's slot.
+            // Colors are applied at runtime: body = current team, heart mark = the player's own slot.
             SpriteRenderer localRing = AddSprite(go.transform, "LocalRing", sprites.Ring, Color.white, Vector2.zero, Vector2.one * 1.6f, 1);
             SpriteRenderer body = AddSprite(go.transform, "Body", sprites.Circle, Color.white, Vector2.zero, Vector2.one, 2);
             AddSprite(go.transform, "Outline", sprites.Ring, Color.white, Vector2.zero, Vector2.one * 1.12f, 3);
-            AddSprite(go.transform, "LeaderMark", sprites.Heart, Color.white, Vector2.zero, Vector2.one * 0.45f, 3);
+            AddSprite(go.transform, "IdentityBack", sprites.Heart, Color.white, Vector2.zero, Vector2.one * 0.56f, 3);
+            SpriteRenderer identity = AddSprite(go.transform, "IdentityMark", sprites.Heart, Color.white, Vector2.zero, Vector2.one * 0.4f, 4);
             SpriteRenderer aimMarker = AddSprite(go.transform, "AimMarker", sprites.Heart, Color.white, new Vector2(0f, 0.85f), Vector2.one * 0.3f, 4);
+            SpriteRenderer shield = AddSprite(go.transform, "ImmunityShield", sprites.Ring, Color.white, Vector2.zero, Vector2.one * 1.55f, 5);
+            shield.enabled = false;
+
+            // Love meter: wider and thicker than an NPC's, so players read as the important characters.
+            const float barY = 0.82f, barWidth = 1.3f;
+            AddSprite(go.transform, "LoveBarBack", sprites.Square, new Color(0.3f, 0.25f, 0.3f, 0.5f), new Vector2(0f, barY), new Vector2(barWidth, 0.2f), 6);
+            SpriteRenderer loyalty = AddSprite(go.transform, "LoyaltyFill", sprites.Square, Color.white, new Vector2(0f, barY), new Vector2(0f, 0.14f), 7);
+            SpriteRenderer captureFill = AddSprite(go.transform, "CaptureFill", sprites.Square, Color.white, new Vector2(0f, barY), new Vector2(0f, 0.14f), 7);
 
             var tag = new GameObject("NameTag").AddComponent<TMPro.TextMeshPro>();
             tag.transform.SetParent(go.transform, false);
-            tag.transform.localPosition = new Vector3(0f, 1.05f, 0f);
+            tag.transform.localPosition = new Vector3(0f, 1.25f, 0f);
             tag.rectTransform.sizeDelta = new Vector2(6f, 0.8f);
             tag.text = "Player";
             tag.fontSize = 3.8f;
@@ -113,6 +243,17 @@ namespace LoveShot.EditorTools
             // The host enforces the dash cooldown (MPPlayer.dashCooldown), so the Mover itself has none.
             var mover = go.AddComponent<Mover>();
             SetField(mover, "dashCooldown", 0f);
+            // A player takes 2.5x a neutral NPC's love to convert; their own team's shots pass through.
+            var capture = go.AddComponent<MPCapture>();
+            SetField(capture, "captureAmount", 250f);
+            SetField(capture, "stealAmount", 250f);
+            SetField(capture, "ownTeamHeals", false);
+            SetField(capture, "recoveryDelay", 3f);
+            SetField(capture, "recoveryRate", 30f);
+            var bar = go.AddComponent<MPCaptureBar>();
+            SetField(bar, "loyaltyFill", loyalty);
+            SetField(bar, "captureFill", captureFill);
+            SetField(bar, "barWidth", barWidth);
             var aim = go.AddComponent<AimIndicator>();
             SetField(aim, "marker", aimMarker.transform);
             var player = go.AddComponent<MPPlayer>();
@@ -124,20 +265,124 @@ namespace LoveShot.EditorTools
             SetField(visuals, "body", body);
             SetField(visuals, "aimMarker", aimMarker);
             SetField(visuals, "localRing", localRing);
+            SetField(visuals, "identityMark", identity);
+            SetField(visuals, "immunityShield", shield);
             SetField(visuals, "nameTag", tag);
             SetField(visuals, "burstPrefab", burst);
             return SaveMPPrefab(go, "MPPlayer");
         }
 
-        static GameObject CreateMPNpcPrefab(Sprites sprites, HeartBurst burst, int obstacleLayer)
+        // One multiplayer NPC type: its prefab plus its spawn weight and per-match limits (0 max = no limit).
+        struct MPNpcType
         {
-            const float bodyScale = 0.8f;
-            var go = new GameObject("MPNpc");
+            public GameObject Prefab;
+            public float Weight;
+            public int Min, Max;
+        }
+
+        // The basic NPC plus the special types. Same body for all; each type has its own brain, a few tuned
+        // values and an accessory so it reads at a glance. Normal NPCs keep most of the spawn weight.
+        static MPNpcType[] CreateMPNpcPrefabs(Sprites sprites, HeartBurst burst, HeartRing ring, FloatingText popup, int obstacleLayer)
+        {
+            var gold = new Color(1f, 0.82f, 0.3f);
+            var wingColor = new Color(1f, 0.88f, 0.5f);
+            var bowColor = new Color(1f, 0.35f, 0.65f);
+
+            GameObject basic = CreateMPNpcPrefab<MPNpc>("MPNpc", MPNpc.NpcType.Basic, 0.8f, sprites, burst, ring, popup, obstacleLayer, null, null);
+
+            GameObject cupid = CreateMPNpcPrefab<MPCupidNpc>("MPNpc_Cupid", MPNpc.NpcType.Cupid, 0.75f, sprites, burst, ring, popup, obstacleLayer,
+                (body, flair) =>
+                {
+                    // Wings sit behind the body and flap.
+                    SpriteRenderer left = AddSprite(body, "WingL", sprites.Heart, wingColor, new Vector2(-0.62f, 0.12f), new Vector2(0.55f, 0.42f), 1);
+                    SpriteRenderer right = AddSprite(body, "WingR", sprites.Heart, wingColor, new Vector2(0.62f, 0.12f), new Vector2(0.55f, 0.42f), 1);
+                    SetArray(flair, "wings", left.transform, right.transform);
+                },
+                go =>
+                {
+                    MPCupidNpc brain = go.GetComponent<MPCupidNpc>();
+                    SetField(brain, "wanderSpeed", 2.8f);
+                    SetField(brain, "followDistance", 3.2f);
+                    SetField(brain, "attackRange", 8f);
+                    SetField(brain, "fireCooldown", 1.5f);
+                    SetField(brain, "projectileSpeed", 15f * ProjectileSpeedScale);
+                    SetField(brain, "shotPower", 12f);
+                });
+
+            GameObject queen = CreateMPNpcPrefab<MPDramaQueenNpc>("MPNpc_DramaQueen", MPNpc.NpcType.DramaQueen, 0.85f, sprites, burst, ring, popup, obstacleLayer,
+                (body, flair) =>
+                {
+                    // A big bow on top, and an aura that glows while her burst is ready.
+                    SpriteRenderer aura = AddSprite(body, "Aura", sprites.Ring, Color.white, Vector2.zero, Vector2.one * 1.5f, 1);
+                    Transform bowLeft = AddSprite(body, "BowL", sprites.Heart, bowColor, new Vector2(-0.2f, 0.52f), new Vector2(0.42f, 0.36f), 4).transform;
+                    bowLeft.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                    Transform bowRight = AddSprite(body, "BowR", sprites.Heart, bowColor, new Vector2(0.2f, 0.52f), new Vector2(0.42f, 0.36f), 4).transform;
+                    bowRight.localRotation = Quaternion.Euler(0f, 0f, -90f);
+                    AddSprite(body, "BowKnot", sprites.Circle, Color.white, new Vector2(0f, 0.52f), Vector2.one * 0.16f, 5);
+                    SetField(flair, "aura", aura);
+                },
+                go => SetField(go.GetComponent<MPDramaQueenNpc>(), "wanderSpeed", 2.2f));
+
+            GameObject celebrity = CreateMPNpcPrefab<MPNpc>("MPNpc_Celebrity", MPNpc.NpcType.Celebrity, 0.95f, sprites, burst, ring, popup, obstacleLayer,
+                (body, flair) =>
+                {
+                    Transform spinner = AddSprite(body, "Glow", sprites.Ring, new Color(gold.r, gold.g, gold.b, 0.85f), Vector2.zero, Vector2.one * 1.35f, 1).transform;
+                    AddSprite(spinner, "SparkleA", sprites.Circle, Color.white, new Vector2(0.45f, 0f), Vector2.one * 0.1f, 2);
+                    AddSprite(spinner, "SparkleB", sprites.Circle, Color.white, new Vector2(-0.45f, 0f), Vector2.one * 0.1f, 2);
+                    AddSprite(body, "Crown", sprites.Crown, gold, new Vector2(0f, 0.62f), new Vector2(0.62f, 0.5f), 4);
+                    SetField(flair, "spinner", spinner);
+                },
+                go =>
+                {
+                    // Worth 3 points and 2.5x harder to win over (recruit 250 love, steal 500).
+                    SetField(go.GetComponent<MPNpc>(), "scoreValue", 3);
+                    SetField(go.GetComponent<MPNpc>(), "wanderSpeed", 2.6f);
+                    SetField(go.GetComponent<MPCapture>(), "sensitivity", 0.4f);
+                });
+
+            GameObject hugger = CreateMPNpcPrefab<MPHuggerNpc>("MPNpc_Hugger", MPNpc.NpcType.Hugger, 0.9f, sprites, burst, ring, popup, obstacleLayer,
+                (body, flair) =>
+                {
+                    Color armColor = new Color(1f, 1f, 1f, 0.9f);
+                    Transform left = AddSprite(body, "ArmL", sprites.Circle, armColor, new Vector2(-0.52f, -0.08f), Vector2.one * 0.3f, 3).transform;
+                    Transform right = AddSprite(body, "ArmR", sprites.Circle, armColor, new Vector2(0.52f, -0.08f), Vector2.one * 0.3f, 3).transform;
+                    AddSprite(body, "Blush", sprites.Heart, new Color(1f, 0.5f, 0.6f, 0.9f), new Vector2(0f, -0.2f), Vector2.one * 0.2f, 4);
+                    SetArray(flair, "arms", left, right);
+                    SetField(flair, "waddle", true);
+                },
+                go =>
+                {
+                    MPHuggerNpc brain = go.GetComponent<MPHuggerNpc>();
+                    SetField(brain, "followSpeed", 6.5f);
+                    SetField(brain, "attackRange", 7f);
+                    // The charge is a Mover dash; the hug cooldown limits it, not the Mover.
+                    Mover mover = go.GetComponent<Mover>();
+                    SetField(mover, "dashSpeedMultiplier", 2.6f);
+                    SetField(mover, "dashDuration", 0.35f);
+                    SetField(mover, "dashCooldown", 0f);
+                });
+
+            return new[]
+            {
+                new MPNpcType { Prefab = basic, Weight = 6f },
+                new MPNpcType { Prefab = cupid, Weight = 1.2f, Max = 2 },
+                new MPNpcType { Prefab = queen, Weight = 1f, Max = 2 },
+                new MPNpcType { Prefab = hugger, Weight = 1.2f, Max = 2 },
+                // Exactly one per match: a single prize everyone fights over.
+                new MPNpcType { Prefab = celebrity, Weight = 0f, Min = 1, Max = 1 },
+            };
+        }
+
+        static GameObject CreateMPNpcPrefab<T>(string name, MPNpc.NpcType type, float bodyScale, Sprites sprites, HeartBurst burst, HeartRing ring, FloatingText popup,
+            int obstacleLayer, Action<Transform, MPNpcFlair> decorate, Action<GameObject> configure) where T : MPNpc
+        {
+            var go = new GameObject(name);
             AddBody(go, bodyScale / 2f);
             AddNetworkMotion(go);
 
             SpriteRenderer body = AddSprite(go.transform, "Body", sprites.Circle, TeamUtil.NeutralColor, Vector2.zero, Vector2.one * bodyScale, 2);
             Color eyeColor = new Color(0.25f, 0.18f, 0.25f);
+            // Eyes and accessories are children of Body so they pop with it (positions are in body units).
             AddSprite(body.transform, "EyeL", sprites.Circle, eyeColor, new Vector2(-0.17f, 0.1f), Vector2.one * 0.15f, 3);
             AddSprite(body.transform, "EyeR", sprites.Circle, eyeColor, new Vector2(0.17f, 0.1f), Vector2.one * 0.15f, 3);
 
@@ -150,32 +395,72 @@ namespace LoveShot.EditorTools
             SetField(mover, "moveSpeed", 2f);
             SetField(mover, "acceleration", 25f);
             go.AddComponent<MPCapture>();
-            var brain = go.AddComponent<MPNpc>();
+            var bar = go.AddComponent<MPCaptureBar>();
+            SetField(bar, "loyaltyFill", loyalty);
+            SetField(bar, "captureFill", capture);
+            var brain = go.AddComponent<T>();
+            SetField(brain, "type", (int)type);
             SetField(brain, "obstacleMask", 1 << obstacleLayer);
             SetField(brain, "spawnOffset", bodyScale / 2f + 0.1f);
+            SetField(brain, "bodyRadius", bodyScale / 2f);
+            SetField(brain, "projectileSpeed", 10f * ProjectileSpeedScale);
+            SetField(brain, "projectileLifetime", 2f / ProjectileSpeedScale);
             var visuals = go.AddComponent<MPNpcVisuals>();
             SetField(visuals, "body", body);
-            SetField(visuals, "loyaltyFill", loyalty);
-            SetField(visuals, "captureFill", capture);
             SetField(visuals, "burstPrefab", burst);
-            return SaveMPPrefab(go, "MPNpc");
+            SetField(visuals, "popupPrefab", popup);
+
+            if (decorate != null)
+            {
+                var flair = go.AddComponent<MPNpcFlair>();
+                SetField(flair, "visuals", visuals);
+                SetField(flair, "ringPrefab", ring);
+                SetField(flair, "burstPrefab", burst);
+                decorate(body.transform, flair);
+            }
+            configure?.Invoke(go);
+            return SaveMPPrefab(go, name);
         }
 
-        static GameObject CreateMPMatchPrefab(GameObject player, GameObject npc, MPProjectile projectile, HeartBurst burst)
+        static void SetArray(Object target, string field, params Object[] values)
+        {
+            var serialized = new SerializedObject(target);
+            SetArray(serialized.FindProperty(field), values);
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static GameObject CreateMPMatchPrefab(GameObject player, MPNpcType[] npcTypes, MPProjectile projectile, HeartBurst burst, HeartRing ring,
+            MPWeapon[] weapons, GameObject pickup)
         {
             var go = new GameObject("MPMatch", typeof(NetworkObject));
             var match = go.AddComponent<MPMatch>();
             SetField(match, "playerPrefab", player.GetComponent<NetworkObject>());
-            SetField(match, "npcPrefab", npc.GetComponent<NetworkObject>());
             SetField(match, "projectilePrefab", projectile);
             SetField(match, "burstPrefab", burst);
-            var spawns = new SerializedObject(match);
-            SerializedProperty list = spawns.FindProperty("playerSpawns");
+            SetField(match, "ringPrefab", ring);
+            var serialized = new SerializedObject(match);
+            SerializedProperty list = serialized.FindProperty("playerSpawns");
             Vector2[] points = { new(-MPSpawnX, MPSpawnY), new(MPSpawnX, -MPSpawnY), new(MPSpawnX, MPSpawnY), new(-MPSpawnX, -MPSpawnY) };
             list.arraySize = points.Length;
             for (int i = 0; i < points.Length; i++) list.GetArrayElementAtIndex(i).vector2Value = points[i];
-            spawns.FindProperty("npcSpawnHalfExtents").vector2Value = new Vector2(MPHalfWidth - 2f, MPHalfHeight - 2f);
-            spawns.ApplyModifiedPropertiesWithoutUndo();
+            Vector2 spawnArea = new Vector2(MPHalfWidth - 2f, MPHalfHeight - 2f);
+            serialized.FindProperty("npcSpawnHalfExtents").vector2Value = spawnArea;
+            SetArray(serialized.FindProperty("weapons"), weapons);
+            SerializedProperty table = serialized.FindProperty("npcTypes");
+            table.arraySize = npcTypes.Length;
+            for (int i = 0; i < npcTypes.Length; i++)
+            {
+                SerializedProperty entry = table.GetArrayElementAtIndex(i);
+                entry.FindPropertyRelative("prefab").objectReferenceValue = npcTypes[i].Prefab.GetComponent<NetworkObject>();
+                entry.FindPropertyRelative("weight").floatValue = npcTypes[i].Weight;
+                entry.FindPropertyRelative("minCount").intValue = npcTypes[i].Min;
+                entry.FindPropertyRelative("maxCount").intValue = npcTypes[i].Max;
+            }
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+
+            var spawner = go.AddComponent<MPPickupSpawner>();
+            SetField(spawner, "pickupPrefab", pickup.GetComponent<NetworkObject>());
+            SetField(spawner, "areaHalfExtents", spawnArea);
             return SaveMPPrefab(go, "MPMatch");
         }
 
@@ -225,9 +510,6 @@ namespace LoveShot.EditorTools
             var layout = root.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
             layout.preferredWidth = 470f;
             layout.preferredHeight = 120f;
-            UnityEngine.UI.Image frame = AddImage(root, new Color(1f, 1f, 1f, 0.85f));
-            frame.sprite = sprites.RoundedRect;
-            frame.type = UnityEngine.UI.Image.Type.Sliced;
 
             Vector2 iconCenter = new Vector2(66f, 66f);
             RectTransform iconBack = CreateRect("IconBack", root, Vector2.zero, Vector2.zero, new Vector2(0.5f, 0.5f), iconCenter, Vector2.one * 92f);
@@ -467,47 +749,38 @@ namespace LoveShot.EditorTools
 
             // Top-center timer.
             RectTransform bar = CreateRect("TopBar", root, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -16f), new Vector2(300f, 100f));
-            UnityEngine.UI.Image barImage = AddImage(bar, new Color(1f, 1f, 1f, 0.85f));
-            barImage.sprite = sprites.RoundedRect;
-            barImage.type = UnityEngine.UI.Image.Type.Sliced;
             TMPro.TextMeshProUGUI timer = CreateText("Timer", bar, "3:00", 64f, new Color(0.35f, 0.25f, 0.35f));
             Stretch(timer.rectTransform);
 
             // Top-left live leaderboard.
-            RectTransform board = CreateRect("Leaderboard", root, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(16f, -16f), new Vector2(430f, 300f));
-            UnityEngine.UI.Image boardImage = AddImage(board, new Color(1f, 1f, 1f, 0.8f));
-            boardImage.sprite = sprites.RoundedRect;
-            boardImage.type = UnityEngine.UI.Image.Type.Sliced;
-            TMPro.TextMeshProUGUI you = CreateText("You", board, "YOU", 30f, SoftPlum);
-            you.alignment = TMPro.TextAlignmentOptions.Left;
-            you.rectTransform.anchorMin = you.rectTransform.anchorMax = new Vector2(0f, 1f);
-            you.rectTransform.pivot = new Vector2(0f, 1f);
-            you.rectTransform.anchoredPosition = new Vector2(22f, -12f);
-            you.rectTransform.sizeDelta = new Vector2(390f, 44f);
+            RectTransform board = CreateRect("Leaderboard", root, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(16f, -16f), new Vector2(430f, 312f));
             (Object[] boardRows, Object[] boardSwatches, Object[] boardNames, Object[] boardCounts) =
-                CreateScoreRows(board, sprites, new Vector2(0f, -88f), 52f, 390f, 36f);
+                CreateScoreRows(board, sprites, new Vector2(0f, -14f), 72f, 390f, 30f);
 
             TMPro.TextMeshProUGUI countdown = CreateText("Countdown", root, "3", 220f, DeepPink);
             countdown.rectTransform.sizeDelta = new Vector2(1400f, 300f);
 
             SkillBarUI skillBar = CreateSkillBar(root, slotPrefab);
+            RectTransform weaponPanel = CreateWeaponPanel(root, sprites);
+            RectTransform statusPanel = CreateStatusPanel(root, sprites);
+            CreateFeed(root);
 
             // Results: dim + banner with ranking and buttons. Hidden until the match ends.
             RectTransform panel = CreateRect("ResultPanel", root, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
             AddImage(panel, new Color(0.3f, 0.15f, 0.25f, 0.4f)).raycastTarget = true;
-            RectTransform banner = CreateRect("Banner", panel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1000f, 760f));
+            RectTransform banner = CreateRect("Banner", panel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1000f, 840f));
             UnityEngine.UI.Image bannerImage = AddImage(banner, new Color(1f, 0.97f, 0.99f, 0.97f));
             bannerImage.sprite = sprites.RoundedRect;
             bannerImage.type = UnityEngine.UI.Image.Type.Sliced;
             TMPro.TextMeshProUGUI resultTitle = CreateText("Title", banner, "PINK WINS!", 96f, DeepPink);
-            resultTitle.rectTransform.anchoredPosition = new Vector2(0f, 290f);
+            resultTitle.rectTransform.anchoredPosition = new Vector2(0f, 330f);
             resultTitle.rectTransform.sizeDelta = new Vector2(940f, 130f);
-            TMPro.TextMeshProUGUI subtitle = CreateText("Subtitle", banner, "FINAL TEAM SIZES", 34f, SoftPlum);
-            subtitle.rectTransform.anchoredPosition = new Vector2(0f, 205f);
+            TMPro.TextMeshProUGUI subtitle = CreateText("Subtitle", banner, "FINAL TEAM SCORES", 34f, SoftPlum);
+            subtitle.rectTransform.anchoredPosition = new Vector2(0f, 240f);
             subtitle.rectTransform.sizeDelta = new Vector2(900f, 50f);
-            RectTransform rowsRoot = CreateRect("Ranking", banner, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 1f), new Vector2(0f, 170f), new Vector2(800f, 340f));
+            RectTransform rowsRoot = CreateRect("Ranking", banner, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 1f), new Vector2(0f, 200f), new Vector2(800f, 380f));
             (Object[] resultRows, Object[] resultSwatches, Object[] resultNames, Object[] resultCounts) =
-                CreateScoreRows(rowsRoot, sprites, Vector2.zero, 78f, 800f, 46f);
+                CreateScoreRows(rowsRoot, sprites, Vector2.zero, 94f, 800f, 42f);
 
             RectTransform buttons = CreateRect("Buttons", banner, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 40f), new Vector2(940f, 120f));
             var row = buttons.gameObject.AddComponent<UnityEngine.UI.HorizontalLayoutGroup>();
@@ -523,11 +796,11 @@ namespace LoveShot.EditorTools
             (UnityEngine.UI.Button menuButton, _) = CreateMenuButton(buttons, "MenuButton", "MAIN MENU", sprites.RoundedRect, new Color(0.62f, 0.42f, 0.58f), new Vector2(340f, 100f), 40f);
             panel.gameObject.SetActive(false);
 
+            SetField(root.gameObject.AddComponent<AimCursor>(), "cursorTexture", sprites.AimCursor);
             var hud = root.gameObject.AddComponent<MPHUD>();
             var serialized = new SerializedObject(hud);
             serialized.FindProperty("timerText").objectReferenceValue = timer;
             serialized.FindProperty("countdownText").objectReferenceValue = countdown;
-            serialized.FindProperty("youText").objectReferenceValue = you;
             serialized.FindProperty("skillBar").objectReferenceValue = skillBar;
             SetArray(serialized.FindProperty("boardRows"), boardRows);
             SetArray(serialized.FindProperty("boardSwatches"), boardSwatches);
@@ -543,10 +816,139 @@ namespace LoveShot.EditorTools
             serialized.FindProperty("waitingForHostText").objectReferenceValue = waiting;
             serialized.FindProperty("firstSelectedOnResults").objectReferenceValue = menuButton.gameObject;
             SetArray(serialized.FindProperty("fadeWhenCovering"), board.gameObject.AddComponent<CanvasGroup>(),
-                skillBar.gameObject.AddComponent<CanvasGroup>(), bar.gameObject.AddComponent<CanvasGroup>());
+                skillBar.gameObject.AddComponent<CanvasGroup>(), bar.gameObject.AddComponent<CanvasGroup>(),
+                weaponPanel.gameObject.AddComponent<CanvasGroup>(), statusPanel.gameObject.AddComponent<CanvasGroup>());
             serialized.ApplyModifiedPropertiesWithoutUndo();
             UnityEditor.Events.UnityEventTools.AddPersistentListener(lobby.onClick, hud.ReturnToLobby);
             UnityEditor.Events.UnityEventTools.AddPersistentListener(menuButton.onClick, hud.ReturnToMainMenu);
+        }
+
+        // Bottom-left, above the skill bar: [icon]  WEAPON NAME   12.3s  + a draining time bar.
+        static RectTransform CreateWeaponPanel(Transform root, Sprites sprites)
+        {
+            RectTransform panel = CreateRect("WeaponPanel", root, Vector2.zero, Vector2.zero, Vector2.zero, new Vector2(24f, 160f), new Vector2(470f, 110f));
+
+            Vector2 iconCenter = new Vector2(62f, 55f);
+            RectTransform iconBack = CreateRect("IconBack", panel, Vector2.zero, Vector2.zero, new Vector2(0.5f, 0.5f), iconCenter, Vector2.one * 84f);
+            AddImage(iconBack, SoftPlum).sprite = sprites.Circle;
+            RectTransform iconRect = CreateRect("Icon", panel, Vector2.zero, Vector2.zero, new Vector2(0.5f, 0.5f), iconCenter, Vector2.one * 56f);
+            UnityEngine.UI.Image icon = AddImage(iconRect, Color.white);
+            icon.sprite = sprites.Heart;
+            icon.preserveAspect = true;
+
+            TMPro.TextMeshProUGUI name = CreateText("Name", panel, "LOVE GUN", 34f, DeepPink);
+            name.alignment = TMPro.TextAlignmentOptions.Left;
+            name.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+            name.enableAutoSizing = true;
+            name.fontSizeMin = 22f;
+            name.fontSizeMax = 34f;
+            name.rectTransform.anchorMin = name.rectTransform.anchorMax = new Vector2(0f, 1f);
+            name.rectTransform.pivot = new Vector2(0f, 1f);
+            name.rectTransform.anchoredPosition = new Vector2(120f, -10f);
+            name.rectTransform.sizeDelta = new Vector2(185f, 50f);
+            TMPro.TextMeshProUGUI time = CreateText("Time", panel, "UNLIMITED", 28f, SoftPlum);
+            time.alignment = TMPro.TextAlignmentOptions.Right;
+            time.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+            time.rectTransform.anchorMin = time.rectTransform.anchorMax = new Vector2(1f, 1f);
+            time.rectTransform.pivot = new Vector2(1f, 1f);
+            time.rectTransform.anchoredPosition = new Vector2(-18f, -14f);
+            time.rectTransform.sizeDelta = new Vector2(130f, 44f);
+            time.enableAutoSizing = true;
+            time.fontSizeMin = 18f;
+            time.fontSizeMax = 26f;
+
+            RectTransform barBack = CreateRect("TimeBarBack", panel, Vector2.zero, Vector2.zero, Vector2.zero, new Vector2(120f, 22f), new Vector2(330f, 22f));
+            UnityEngine.UI.Image barBackImage = AddImage(barBack, new Color(0.45f, 0.28f, 0.42f, 0.2f));
+            barBackImage.sprite = sprites.RoundedRect;
+            barBackImage.type = UnityEngine.UI.Image.Type.Sliced;
+            RectTransform barRect = CreateRect("TimeBar", barBack, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            UnityEngine.UI.Image bar = AddImage(barRect, DeepPink);
+            bar.sprite = sprites.Square;
+            bar.type = UnityEngine.UI.Image.Type.Filled;
+            bar.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
+            bar.fillOrigin = (int)UnityEngine.UI.Image.OriginHorizontal.Left;
+
+            var hud = panel.gameObject.AddComponent<MPWeaponHUD>();
+            SetField(hud, "icon", icon);
+            SetField(hud, "nameText", name);
+            SetField(hud, "timeText", time);
+            SetField(hud, "timeBar", bar);
+            return panel;
+        }
+
+        // Bottom-left, above the weapon panel: YOU: name / (o) PINK TEAM / your love meter + LOYAL / SAFE 2.1s / BLUE 40%.
+        static RectTransform CreateStatusPanel(Transform root, Sprites sprites)
+        {
+            RectTransform panel = CreateRect("StatusPanel", root, Vector2.zero, Vector2.zero, Vector2.zero, new Vector2(24f, 286f), new Vector2(470f, 128f));
+
+            TMPro.TextMeshProUGUI name = CreateText("Name", panel, "YOU", 30f, SoftPlum);
+            name.alignment = TMPro.TextAlignmentOptions.Left;
+            name.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+            name.rectTransform.anchorMin = name.rectTransform.anchorMax = new Vector2(0f, 1f);
+            name.rectTransform.pivot = new Vector2(0f, 1f);
+            name.rectTransform.anchoredPosition = new Vector2(20f, -8f);
+            name.rectTransform.sizeDelta = new Vector2(430f, 40f);
+
+            RectTransform dot = CreateRect("TeamSwatch", panel, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0.5f, 0.5f), new Vector2(36f, -66f), Vector2.one * 30f);
+            UnityEngine.UI.Image swatch = AddImage(dot, Color.white);
+            swatch.sprite = sprites.Circle;
+            TMPro.TextMeshProUGUI team = CreateText("Team", panel, "PINK TEAM", 32f, DeepPink);
+            team.alignment = TMPro.TextAlignmentOptions.Left;
+            team.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+            team.rectTransform.anchorMin = team.rectTransform.anchorMax = new Vector2(0f, 1f);
+            team.rectTransform.pivot = new Vector2(0f, 0.5f);
+            team.rectTransform.anchoredPosition = new Vector2(62f, -66f);
+            team.rectTransform.sizeDelta = new Vector2(250f, 40f);
+            TMPro.TextMeshProUGUI meterText = CreateText("MeterText", panel, "LOYAL", 26f, SoftPlum);
+            meterText.alignment = TMPro.TextAlignmentOptions.Right;
+            meterText.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+            meterText.rectTransform.anchorMin = meterText.rectTransform.anchorMax = new Vector2(1f, 1f);
+            meterText.rectTransform.pivot = new Vector2(1f, 0.5f);
+            meterText.rectTransform.anchoredPosition = new Vector2(-20f, -66f);
+            meterText.rectTransform.sizeDelta = new Vector2(170f, 40f);
+
+            // Love meter: loyalty from the left in your team's color, the capturer's progress from the right.
+            RectTransform meter = CreateRect("LoveMeter", panel, Vector2.zero, Vector2.zero, Vector2.zero, new Vector2(20f, 16f), new Vector2(430f, 24f));
+            UnityEngine.UI.Image meterBack = AddImage(meter, new Color(0.45f, 0.28f, 0.42f, 0.2f));
+            meterBack.sprite = sprites.RoundedRect;
+            meterBack.type = UnityEngine.UI.Image.Type.Sliced;
+            UnityEngine.UI.Image Fill(string fillName, UnityEngine.UI.Image.OriginHorizontal origin)
+            {
+                RectTransform rect = CreateRect(fillName, meter, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+                UnityEngine.UI.Image image = AddImage(rect, Color.white);
+                image.sprite = sprites.Square;
+                image.type = UnityEngine.UI.Image.Type.Filled;
+                image.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
+                image.fillOrigin = (int)origin;
+                return image;
+            }
+            UnityEngine.UI.Image loyalty = Fill("LoyaltyFill", UnityEngine.UI.Image.OriginHorizontal.Left);
+            UnityEngine.UI.Image capture = Fill("CaptureFill", UnityEngine.UI.Image.OriginHorizontal.Right);
+            capture.fillAmount = 0f;
+
+            var status = panel.gameObject.AddComponent<MPStatusHUD>();
+            SetField(status, "nameText", name);
+            SetField(status, "teamText", team);
+            SetField(status, "teamSwatch", swatch);
+            SetField(status, "loyaltyFill", loyalty);
+            SetField(status, "captureFill", capture);
+            SetField(status, "meterText", meterText);
+            return panel;
+        }
+
+        // Announcements under the timer ("BLUE FELL FOR PINK!").
+        static void CreateFeed(Transform root)
+        {
+            TMPro.TextMeshProUGUI text = CreateText("Feed", root, "", 60f, DeepPink);
+            text.rectTransform.anchorMin = text.rectTransform.anchorMax = new Vector2(0.5f, 1f);
+            text.rectTransform.pivot = new Vector2(0.5f, 1f);
+            text.rectTransform.anchoredPosition = new Vector2(0f, -130f);
+            text.rectTransform.sizeDelta = new Vector2(1300f, 170f);
+            text.enableAutoSizing = true;
+            text.fontSizeMin = 30f;
+            text.fontSizeMax = 60f;
+            text.raycastTarget = false;
+            SetField(root.gameObject.AddComponent<MPFeed>(), "text", text);
         }
 
         // MPTeams.MaxTeams rows (dot, name, count) stacked downward from `start` inside `parent` (anchored top-center).

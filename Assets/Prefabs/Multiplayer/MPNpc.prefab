@@ -478,6 +478,7 @@ GameObject:
   - component: {fileID: 2915272459387695214}
   - component: {fileID: 6215513772122641355}
   - component: {fileID: 3610090942670062520}
+  - component: {fileID: 7587956780978955983}
   - component: {fileID: 984791635683742195}
   - component: {fileID: 1740437324203323321}
   m_Layer: 0
@@ -581,7 +582,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1077901537
+  GlobalObjectIdHash: 3592454170
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -692,6 +693,24 @@ MonoBehaviour:
   captureAmount: 100
   stealAmount: 200
   sensitivity: 1
+  ownTeamHeals: 1
+  recoveryDelay: 0
+  recoveryRate: 0
+--- !u!114 &7587956780978955983
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5539241594119191505}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 09b25ad64d57e4d4fba16ec6daa7b6cd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPCaptureBar
+  loyaltyFill: {fileID: 5136669830474309391}
+  captureFill: {fileID: 1031059624746411178}
+  barWidth: 1
 --- !u!114 &984791635683742195
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -706,6 +725,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPNpc
   ShowTopMostFoldoutHeaderGroup: 1
   type: 0
+  scoreValue: 1
   wanderSpeed: 2
   directionChangeInterval: {x: 1.5, y: 3.5}
   idleChance: 0.2
@@ -721,7 +741,8 @@ MonoBehaviour:
   retargetInterval: 0.4
   enemyTargetPriority: 0.7
   fireCooldown: 0.9
-  projectileSpeed: 10
+  projectileSpeed: 15
+  projectileLifetime: 1.3333334
   shotPower: 10
   spawnOffset: 0.5
   obstacleMask:
@@ -743,9 +764,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPNpcVisuals
   body: {fileID: 3186003434940631551}
-  loyaltyFill: {fileID: 5136669830474309391}
-  captureFill: {fileID: 1031059624746411178}
-  barWidth: 1
   neutralTint: 0.45
   flashColor: {r: 1, g: 1, b: 1, a: 1}
   hitFlashDuration: 0.08
@@ -753,6 +771,8 @@ MonoBehaviour:
   popDuration: 0.3
   burstPrefab: {fileID: 8599745726365794670, guid: 46d544cdbcf16954fb1b362b6e23baad, type: 3}
   localTeamShake: 0.08
+  popupPrefab: {fileID: 5675390319630777449, guid: 4ec926e9e4ccf554c8686790d4652bf4, type: 3}
+  lostColor: {r: 0.45, g: 0.28, b: 0.42, a: 1}
 --- !u!1 &6622916133950921038
 GameObject:
   m_ObjectHideFlags: 0

@@ -338,7 +338,7 @@ MonoBehaviour:
   team: 0
   projectilePrefab: {fileID: 7281730647480420266, guid: c5976ec301932f04f87935d339a14e9c, type: 3}
   fireCooldown: 1.4
-  projectileSpeed: 10
+  projectileSpeed: 15
   affectionPerHit: 10
   spawnOffset: 0.625
 --- !u!114 &6294303208840539424

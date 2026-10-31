@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 6004214333090532203}
   - component: {fileID: 8175628763749201036}
   - component: {fileID: 2282864305173822640}
+  - component: {fileID: 7367794585134972551}
   m_Layer: 0
   m_Name: MPMatch
   m_TagString: Untagged
@@ -45,7 +46,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1077901537
+  GlobalObjectIdHash: 3592454170
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -77,7 +78,27 @@ MonoBehaviour:
   countdownDuration: 3
   loadTimeout: 10
   playerPrefab: {fileID: 8320568340534309430, guid: e9d3d020785f435439a44ea0acc0a717, type: 3}
-  npcPrefab: {fileID: 884100661084329438, guid: 3e342a3d702277640aea3a21f6592aa2, type: 3}
+  npcTypes:
+  - prefab: {fileID: 884100661084329438, guid: 3e342a3d702277640aea3a21f6592aa2, type: 3}
+    weight: 6
+    minCount: 0
+    maxCount: 0
+  - prefab: {fileID: 2712898716933010405, guid: da61ba603f7dd024d95aea175ca89e2c, type: 3}
+    weight: 1.2
+    minCount: 0
+    maxCount: 2
+  - prefab: {fileID: 5947747563797342791, guid: 70b0a61aba8431844bcb8930bdabee2c, type: 3}
+    weight: 1
+    minCount: 0
+    maxCount: 2
+  - prefab: {fileID: 4099732388503328478, guid: 718a737e3104d1c4eba82cc9a1d34b94, type: 3}
+    weight: 1.2
+    minCount: 0
+    maxCount: 2
+  - prefab: {fileID: 4120423894180168783, guid: 5d480dbb2c61f564387a2bd11cc1fb5b, type: 3}
+    weight: 0
+    minCount: 1
+    maxCount: 1
   playerSpawns:
   - {x: -21, y: 10}
   - {x: 21, y: -10}
@@ -90,4 +111,37 @@ MonoBehaviour:
   playerSpawnClearance: 4
   projectilePrefab: {fileID: 6142666205517943309, guid: 4b1d7940c89ea8d468a48625d47998fb, type: 3}
   burstPrefab: {fileID: 8599745726365794670, guid: 46d544cdbcf16954fb1b362b6e23baad, type: 3}
+  ringPrefab: {fileID: 1266542721413796787, guid: 9243a3c2ed8067f4fb524e8f045e3d41, type: 3}
+  explosionShake: 0.25
+  weapons:
+  - {fileID: 11400000, guid: 1f82893386d4a9349a96f64685244287, type: 2}
+  - {fileID: 11400000, guid: dc8a57ca89f35ae4ebffcc50da72a627, type: 2}
+  - {fileID: 11400000, guid: 0a153d5c3b4cf6b408b07fde8324c2c3, type: 2}
+  - {fileID: 11400000, guid: 754cb0b2bfa32604aa41f7d77186966f, type: 2}
+  endWhenOneTeamLeft: 1
   scoreInterval: 0.2
+--- !u!114 &7367794585134972551
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5453500553966411718}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: de23a117aa042a14b840b33562f3856e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPPickupSpawner
+  pickupPrefab: {fileID: 3751849589994883069, guid: f4e73d19e40e84644a893e434e37784f, type: 3}
+  weaponWeights:
+  - 0
+  - 1
+  - 1
+  - 0.7
+  firstSpawnDelay: 5
+  spawnInterval: 9
+  maxActive: 3
+  pickupLifetime: 20
+  areaHalfExtents: {x: 26, y: 15}
+  clearance: 1
+  minPlayerDistance: 4

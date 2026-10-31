@@ -5,20 +5,24 @@ using UnityEngine;
 namespace LoveShot.Multiplayer
 {
     // Networked NPC brain, run only on the host (clients just see the synced position, owner and capture).
-    // Neutral NPCs wander; owned NPCs follow their team's player, keep spacing from teammates and shoot NPCs
-    // of every other team (neutral or enemy-owned). Mirrors the single-player NPCController behavior, but works
-    // with the 4-team MPCapture instead of Pink/Blue Affection, so the two modes stay independent.
-    // Special types (Cupid, Shy, Bodyguard...) can subclass this and override Wander / Follow / FindTarget / Fire.
+    // Neutral NPCs wander; owned NPCs follow their personal owner (the player who recruited them), keep
+    // spacing from teammates and shoot NPCs of every other team (neutral or enemy-owned). Mirrors the
+    // single-player NPCController behavior, but works with the 4-team MPCapture instead of Pink/Blue
+    // Affection, so the two modes stay independent.
+    // Special types subclass this and override Wander / Follow / UpdateCombat / TargetScore / Fire / OnTeamChanged.
     [RequireComponent(typeof(Mover), typeof(MPCapture))]
     public class MPNpc : NetworkBehaviour
     {
-        public enum NpcType : byte { Basic, Cupid, Shy, Bodyguard }
-        public enum NpcBehavior : byte { Wander, Follow, Attack }
+        // Shy and Bodyguard are single-player types kept for future use; values stay stable for the network.
+        public enum NpcType : byte { Basic, Cupid, Shy, Bodyguard, DramaQueen, Celebrity, Hugger }
+        public enum NpcBehavior : byte { Wander, Follow, Attack, Charge }
 
         static readonly List<MPNpc> all = new();
         public static IReadOnlyList<MPNpc> All => all;
 
         [SerializeField] NpcType type = NpcType.Basic;
+        [Tooltip("Points this NPC is worth to the team that owns it.")]
+        [SerializeField, Min(0)] int scoreValue = 1;
 
         [Header("Wander (Neutral)")]
         [SerializeField, Min(0f)] float wanderSpeed = 2f;
@@ -27,7 +31,7 @@ namespace LoveShot.Multiplayer
         [SerializeField, Min(0f)] float wanderTurnSpeed = 240f;
 
         [Header("Follow (Owned)")]
-        [SerializeField, Min(0f)] float followSpeed = 6f;
+        [SerializeField, Min(0f)] protected float followSpeed = 6f;
         [SerializeField, Min(0f)] protected float followDistance = 1.8f;
         [SerializeField, Min(0f)] float followLag = 0.3f;
         [SerializeField, Min(0f)] float catchUpDistance = 6f;
@@ -36,18 +40,20 @@ namespace LoveShot.Multiplayer
         [SerializeField, Min(0f)] float separationStrength = 1.5f;
 
         [Header("Combat (Owned)")]
-        [SerializeField, Min(0f)] float attackRange = 6f;
+        [SerializeField, Min(0f)] protected float attackRange = 6f;
         [SerializeField, Min(0.05f)] float retargetInterval = 0.4f;
         [Tooltip("Distance multiplier for enemy-owned targets. Below 1 = prefers stealing over recruiting neutrals.")]
         [SerializeField, Min(0.1f)] float enemyTargetPriority = 0.7f;
-        [SerializeField, Min(0f)] float fireCooldown = 0.9f;
-        [SerializeField, Min(0f)] float projectileSpeed = 10f;
-        [Tooltip("Capture power per shot (players' shots are 20).")]
-        [SerializeField, Min(0f)] float shotPower = 10f;
-        [SerializeField, Min(0f)] float spawnOffset = 0.5f;
+        [SerializeField, Min(0f)] protected float fireCooldown = 0.9f;
+        [SerializeField, Min(0f)] protected float projectileSpeed = 15f;
+        [Tooltip("Seconds a shot flies before fading (range = speed x lifetime).")]
+        [SerializeField, Min(0.05f)] float projectileLifetime = 1.33f;
+        [Tooltip("Love per shot (players' default shots are 20).")]
+        [SerializeField, Min(0f)] protected float shotPower = 10f;
+        [SerializeField, Min(0f)] protected float spawnOffset = 0.5f;
 
         [Header("Obstacles")]
-        [SerializeField] LayerMask obstacleMask;
+        [SerializeField] protected LayerMask obstacleMask;
         [SerializeField, Min(0f)] float lookAhead = 0.9f;
         [SerializeField, Min(0f)] float bodyRadius = 0.4f;
         [SerializeField, Min(0.1f)] float stuckTime = 0.8f;
@@ -58,12 +64,14 @@ namespace LoveShot.Multiplayer
         public Mover Mover { get; private set; }
         public MPCapture Capture { get; private set; }
         public int Team => Capture.Owner;
+        public int PersonalOwner => Capture.PersonalOwner;
         public NpcType Type => npcType.Value;
         public NpcBehavior Behavior => behavior.Value;
+        public int ScoreValue => scoreValue;
 
-        MPNpc target;
+        protected MPCapture target;
         float nextRetargetTime;
-        float nextFireTime;
+        protected float nextFireTime;
         Vector2 wanderDirection;
         Vector2 wanderHeading;
         float nextWanderChange;
@@ -109,16 +117,18 @@ namespace LoveShot.Multiplayer
             bool neutral = Team == MPTeams.Neutral;
             Vector2 desired = Time.time < unstuckUntil ? unstuckDirection
                 : neutral ? Wander()
-                : Follow(MPPlayer.ForTeam(Team));
+                : Follow(MPPlayer.ForSlot(PersonalOwner));
             Vector2 steered = Steering.AvoidObstacles(transform.position, desired, bodyRadius, lookAhead, obstacleMask);
             if (neutral && steered != desired) wanderDirection = wanderHeading = steered.normalized;
             Mover.SetMoveInput(steered);
             CheckStuck(steered);
 
             if (!neutral) UpdateCombat();
-            NpcBehavior current = neutral ? NpcBehavior.Wander : target != null ? NpcBehavior.Attack : NpcBehavior.Follow;
+            NpcBehavior current = neutral ? NpcBehavior.Wander : CurrentBehavior();
             if (behavior.Value != current) behavior.Value = current;
         }
+
+        protected virtual NpcBehavior CurrentBehavior() => target != null ? NpcBehavior.Attack : NpcBehavior.Follow;
 
         protected virtual void OnTeamChanged(int previous, int current)
         {
@@ -154,34 +164,38 @@ namespace LoveShot.Multiplayer
             return toPoint / distance * Mathf.Clamp01((distance - stopDistance) / easing);
         }
 
-        void UpdateCombat()
+        protected virtual void UpdateCombat()
         {
-            if (Time.time >= nextRetargetTime || !IsValidTarget(target, attackRange * 1.2f))
-            {
-                target = FindTarget();
-                nextRetargetTime = Time.time + retargetInterval;
-            }
+            RefreshTarget();
             if (target != null && Time.time >= nextFireTime) Fire(target.transform.position - transform.position);
         }
+
+        protected void RefreshTarget()
+        {
+            if (Time.time < nextRetargetTime && IsValidTarget(target, attackRange * 1.2f)) return;
+            target = FindTarget();
+            nextRetargetTime = Time.time + retargetInterval;
+        }
+
+        protected virtual MPShot Shot => new(ProjectileStyle.Heart, projectileSpeed, shotPower, projectileLifetime);
 
         protected virtual void Fire(Vector2 direction)
         {
             if (MPMatch.Instance == null || direction.sqrMagnitude < 0.0001f) return;
             nextFireTime = Time.time + fireCooldown;
             Vector2 origin = (Vector2)transform.position + direction.normalized * spawnOffset;
-            MPMatch.Instance.Fire(Team, origin, direction, projectileSpeed, shotPower, false, NetworkObjectId);
+            MPMatch.Instance.Fire(Team, PersonalOwner, origin, direction, Shot, false, NetworkObjectId);
         }
 
-        // Nearest visible NPC of another team; enemy-owned NPCs count as closer than neutrals.
-        protected virtual MPNpc FindTarget()
+        // Lowest TargetScore among valid targets in range.
+        MPCapture FindTarget()
         {
-            MPNpc best = null;
+            MPCapture best = null;
             float bestScore = float.MaxValue;
-            foreach (MPNpc other in all)
+            foreach (MPCapture other in MPCapture.All)
             {
                 if (!IsValidTarget(other, attackRange)) continue;
-                float score = Vector2.Distance(transform.position, other.transform.position);
-                if (other.Team != MPTeams.Neutral) score *= enemyTargetPriority;
+                float score = TargetScore(other, Vector2.Distance(transform.position, other.transform.position));
                 if (score < bestScore)
                 {
                     bestScore = score;
@@ -191,9 +205,17 @@ namespace LoveShot.Multiplayer
             return best;
         }
 
-        bool IsValidTarget(MPNpc other, float range)
+        // Lower is better; float.MaxValue skips the target. Basic NPCs only shoot NPCs, preferring enemy-owned ones.
+        protected virtual float TargetScore(MPCapture other, float distance)
         {
-            if (other == null || other == this || !other.IsSpawned || other.Team == Team) return false;
+            if (other.Player != null) return float.MaxValue;
+            return other.Owner != MPTeams.Neutral ? distance * enemyTargetPriority : distance;
+        }
+
+        protected bool IsValidTarget(MPCapture other, float range)
+        {
+            if (other == null || other.gameObject == gameObject || !other.IsSpawned || !other.CanBeAffectedBy(Team) || other.Owner == Team) return false;
+            if (other.Player != null && other.Player.IsConversionImmune) return false;
             Vector2 from = transform.position, to = other.transform.position;
             return Vector2.Distance(from, to) <= range && Steering.HasLineOfSight(from, to, obstacleMask);
         }
