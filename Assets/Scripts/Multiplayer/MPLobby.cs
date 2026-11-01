@@ -40,6 +40,8 @@ namespace LoveShot.Multiplayer
         readonly NetworkVariable<LobbyPhase> phase = new(LobbyPhase.Lobby);
         readonly NetworkVariable<FixedString32Bytes> roomCode = new();
         readonly NetworkVariable<TeamMode> mode = new(TeamMode.FreeForAll);
+        // FFA only: converted players walk beside their team's lead (and still shoot) instead of keeping full control.
+        readonly NetworkVariable<bool> zombieMode = new(true);
         // The icon row: order[position] is the slot shown there. Positions 0-1 and 2-3 are the two sides in 2v2.
         readonly NetworkList<int> order = new();
         // Host only: names received per client, including ones that arrived before the client was added.
@@ -50,6 +52,9 @@ namespace LoveShot.Multiplayer
         public string RoomCode => roomCode.Value.ToString();
         public int MinPlayersToStart => minPlayersToStart;
         public TeamMode Mode => mode.Value;
+        public bool ZombieMode => zombieMode.Value;
+        // Zombies exist only in free-for-all; 2v2 keeps full control for converted players.
+        public bool UsesZombies => mode.Value == TeamMode.FreeForAll && zombieMode.Value;
         public bool CanStart => IsServer && phase.Value == LobbyPhase.Lobby && players.Count >= minPlayersToStart && HasValidTeams;
 
         // FFA needs nothing beyond the player minimum; 2v2 needs at least one player on each side.
@@ -190,6 +195,13 @@ namespace LoveShot.Multiplayer
         {
             if (rpcParams.Receive.SenderClientId != NetworkManager.ServerClientId || phase.Value != LobbyPhase.Lobby) return;
             mode.Value = newMode;
+        }
+
+        [Rpc(SendTo.Server)]
+        public void SetZombieModeRpc(bool enabled, RpcParams rpcParams = default)
+        {
+            if (rpcParams.Receive.SenderClientId != NetworkManager.ServerClientId || phase.Value != LobbyPhase.Lobby) return;
+            zombieMode.Value = enabled;
         }
 
         // Swaps the icons at `position` and `position + 1` (connected or not).

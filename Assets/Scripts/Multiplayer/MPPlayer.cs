@@ -16,7 +16,9 @@ namespace LoveShot.Multiplayer
     //
     // Identity vs allegiance: Slot is permanent (lobby slot, name, identity color). Team is the team the
     // player currently fights for (its MPCapture owner); it starts as the lobby team (own slot in FFA, side 0 or 1 in 2v2) and changes when another
-    // team converts the player. A converted player keeps full control and takes their own NPCs along.
+    // team converts the player. A converted player takes their own NPCs along. In FFA, converting a team's
+    // lead converts the whole team, and with zombie mode on every converted player walks beside their team's
+    // lead (the owner's movement input is replaced) while still aiming and shooting.
     [RequireComponent(typeof(Mover), typeof(MPCapture))]
     public class MPPlayer : NetworkBehaviour
     {
@@ -43,6 +45,18 @@ namespace LoveShot.Multiplayer
         [Tooltip("Seconds a freshly converted player can't be converted again (shots pass through).")]
         [SerializeField, Min(0f)] float conversionImmunity = 3f;
 
+        [Header("Zombie (converted player in FFA zombie mode: walks beside the team lead, still aims and shoots)")]
+        [Tooltip("How far to the side of the lead a zombie walks.")]
+        [SerializeField, Min(0f)] float zombieSideDistance = 1.6f;
+        [Tooltip("Stops this far from its walking spot.")]
+        [SerializeField, Min(0f)] float zombieStopDistance = 0.3f;
+        [Tooltip("Beyond this distance from the lead a zombie speeds up to catch up.")]
+        [SerializeField, Min(0f)] float zombieCatchUpDistance = 6f;
+        [SerializeField, Range(1f, 1.3f)] float zombieCatchUpMultiplier = 1.25f;
+        [SerializeField] LayerMask obstacleMask;
+        [SerializeField, Min(0f)] float lookAhead = 0.9f;
+        [SerializeField, Min(0f)] float bodyRadius = 0.4f;
+
         [Header("Movement check (host)")]
         [Tooltip("Allowed speed as a multiple of the move speed (positions arrive unevenly).")]
         [SerializeField, Min(1f)] float speedTolerance = 1.3f;
@@ -65,6 +79,8 @@ namespace LoveShot.Multiplayer
         readonly NetworkVariable<double> dashReadyTime = new(0d);
         readonly NetworkVariable<double> struckUntil = new(0d);
         readonly NetworkVariable<double> conversionImmuneUntil = new(0d);
+        // Slot of the player who converted this one (a zombie walks beside them).
+        readonly NetworkVariable<int> followSlot = new(MPTeams.Neutral);
         // Index into MPMatch weapons (0 = Default Gun) and when a picked-up weapon runs out.
         readonly NetworkVariable<byte> weapon = new(0);
         readonly NetworkVariable<double> weaponExpireTime = new(0d);
@@ -78,6 +94,7 @@ namespace LoveShot.Multiplayer
 
         // Owner-side.
         Vector2 lastMoveDirection = Vector2.right;
+        float speedBoost = 1f;
         float nextFireTime;
         ushort shotSequence;
         float predictedDashReady;
@@ -103,6 +120,21 @@ namespace LoveShot.Multiplayer
 
         public int Slot => slot.Value;
         public int Team => capture.Owner;
+        // FFA: a team's lead is the player it started with. Converting the lead converts the whole team.
+        public bool IsLead => Team == Slot;
+        // FFA zombie mode: a converted player (on any team but their own) follows their team's lead.
+        public bool IsZombie => MPLobby.Instance != null && MPLobby.Instance.UsesZombies && !IsLead;
+        public Vector2 AimDirection => aim.Value;
+
+        // The player a zombie walks beside: its converter, or the team's lead if the converter has since left the team.
+        public MPPlayer FollowTarget
+        {
+            get
+            {
+                MPPlayer converter = ForSlot(followSlot.Value);
+                return converter != null && converter != this && converter.Team == Team ? converter : ForSlot(Team);
+            }
+        }
         public MPCapture Capture => capture;
         public bool IsConversionImmune => Now < conversionImmuneUntil.Value;
         public float ConversionImmunityRemaining => Mathf.Max(0f, (float)(conversionImmuneUntil.Value - Now));
@@ -215,25 +247,65 @@ namespace LoveShot.Multiplayer
             Vector2 move = Vector2.zero;
             Vector2 aimDirection = aim.Value;
             bool fire = false;
+            speedBoost = 1f;
+            bool zombie = IsZombie;
             if (live)
             {
-                if (keyboard.aKey.isPressed) move.x -= 1f;
-                if (keyboard.dKey.isPressed) move.x += 1f;
-                if (keyboard.sKey.isPressed) move.y -= 1f;
-                if (keyboard.wKey.isPressed) move.y += 1f;
-                move = move.normalized;
+                if (zombie) move = ZombieMove();
+                else
+                {
+                    if (keyboard.aKey.isPressed) move.x -= 1f;
+                    if (keyboard.dKey.isPressed) move.x += 1f;
+                    if (keyboard.sKey.isPressed) move.y -= 1f;
+                    if (keyboard.wKey.isPressed) move.y += 1f;
+                    move = move.normalized;
+                }
                 if (move != Vector2.zero) lastMoveDirection = move;
 
-                Vector2 mouseWorld = aimCamera.ScreenToWorldPoint(mouse.position.ReadValue());
-                Vector2 toMouse = mouseWorld - (Vector2)transform.position;
-                if (toMouse.sqrMagnitude > 0.0001f) aimDirection = toMouse.normalized;
-                fire = holdToFire ? mouse.leftButton.isPressed : mouse.leftButton.wasPressedThisFrame;
+                if (zombie)
+                {
+                    // A zombie's aim mirrors the player it follows, and it fires when they do (host side).
+                    MPPlayer leader = FollowTarget;
+                    if (leader != null && leader != this) aimDirection = leader.AimDirection;
+                }
+                else
+                {
+                    Vector2 mouseWorld = aimCamera.ScreenToWorldPoint(mouse.position.ReadValue());
+                    Vector2 toMouse = mouseWorld - (Vector2)transform.position;
+                    if (toMouse.sqrMagnitude > 0.0001f) aimDirection = toMouse.normalized;
+                    fire = holdToFire ? mouse.leftButton.isPressed : mouse.leftButton.wasPressedThisFrame;
+                }
 
                 // Skills go where you're moving; if standing still, in the last direction you moved.
-                foreach (Skill skill in skills)
-                    if (keyboard[skill.Key].wasPressedThisFrame) skill.TryActivate(lastMoveDirection);
+                if (!zombie)
+                    foreach (Skill skill in skills)
+                        if (keyboard[skill.Key].wasPressedThisFrame) skill.TryActivate(lastMoveDirection);
             }
             OwnerTick(move, aimDirection, fire);
+        }
+
+        // Owner, zombie: walk to a spot beside the lead (alternating sides among the team's zombies), around obstacles.
+        Vector2 ZombieMove()
+        {
+            MPPlayer lead = FollowTarget;
+            if (lead == null || lead == this) return Vector2.zero;
+            int index = 0;
+            foreach (MPPlayer other in MPMatch.MembersOf(Team))
+            {
+                if (other == this) break;
+                if (other != lead && other.IsZombie && other.FollowTarget == lead) index++;
+            }
+            Vector2 facing = lead.Velocity.sqrMagnitude > 0.25f ? lead.Velocity.normalized : lead.AimDirection;
+            float side = (index % 2 == 0 ? 1f : -1f) * (1 + index / 2);
+            Vector2 spot = lead.Position + Vector2.Perpendicular(facing) * side * zombieSideDistance;
+
+            Vector2 toSpot = spot - (Vector2)transform.position;
+            float distance = toSpot.magnitude;
+            if (Vector2.Distance(transform.position, lead.Position) > zombieCatchUpDistance) speedBoost = zombieCatchUpMultiplier;
+            if (distance < 0.001f) return Vector2.zero;
+            float easing = Mathf.Max(zombieStopDistance, 0.5f);
+            Vector2 desired = toSpot / distance * Mathf.Clamp01((distance - zombieStopDistance) / easing);
+            return Steering.AvoidObstacles(transform.position, desired, bodyRadius, lookAhead, obstacleMask);
         }
 
         // One frame of owner input: moves locally, shares the aim, and fires (predicted, then confirmed by the host).
@@ -241,7 +313,7 @@ namespace LoveShot.Multiplayer
         {
             bool live = MPMatch.InProgress;
             bool struck = IsStruck;
-            mover.SpeedMultiplier = struck ? struckSpeedMultiplier : 1f;
+            mover.SpeedMultiplier = struck ? struckSpeedMultiplier : speedBoost;
             mover.SetMoveInput(live ? Vector2.ClampMagnitude(move, 1f) : Vector2.zero);
             if (aimDirection.sqrMagnitude > 0.0001f)
             {
@@ -260,14 +332,14 @@ namespace LoveShot.Multiplayer
             Vector2 origin = (Vector2)transform.position + direction * spawnOffset;
             if (++shotSequence == 0) shotSequence = 1;
             // A client shows its shot right away; the host's projectiles take over these copies when they arrive.
-            if (!IsServer && MPMatch.Instance != null) MPMatch.Instance.PredictWeapon(current, Team, origin, direction, NetworkObjectId, shotSequence);
+            if (!IsServer && MPMatch.Instance != null) MPMatch.Instance.PredictWeapon(current, Team, Slot, origin, direction, NetworkObjectId, shotSequence);
             ShootRpc(origin, direction, shotSequence);
         }
 
         // Owner: dashes at once. The host checks the cooldown and shows the dash to everyone else.
         public bool TryDash(Vector2 direction)
         {
-            if (!IsOwner || !MPMatch.InProgress || direction.sqrMagnitude < 0.0001f || DashCooldownRemaining > 0f) return false;
+            if (!IsOwner || IsZombie || !MPMatch.InProgress || direction.sqrMagnitude < 0.0001f || DashCooldownRemaining > 0f) return false;
             direction.Normalize();
             if (!mover.TryDash(direction)) return false;
             predictedDashReady = Time.time + dashCooldown;
@@ -313,6 +385,18 @@ namespace LoveShot.Multiplayer
             Vector2 expected = (Vector2)transform.position + direction * spawnOffset;
             if (Vector2.Distance(origin, expected) > maxOriginError) origin = expected;
             MPMatch.Instance.FireWeapon(current, Team, Slot, origin, direction, NetworkObjectId, IsOwnedByServer ? (ushort)0 : sequence);
+
+            // Zombies following this player attack with them: same weapon, same direction, from their own position.
+            foreach (MPPlayer zombie in all)
+                if (zombie != this && zombie.IsZombie && !zombie.IsStruck && zombie.FollowTarget == this)
+                    zombie.ServerMirrorShot(current, direction);
+        }
+
+        // Host: fires `weapon` in `direction` from this zombie, because the player it follows just fired.
+        void ServerMirrorShot(MPWeapon weapon, Vector2 direction)
+        {
+            Vector2 origin = (Vector2)transform.position + direction * spawnOffset;
+            MPMatch.Instance.FireWeapon(weapon, Team, Slot, origin, direction, NetworkObjectId);
         }
 
         // The host is the only judge of the cooldown; a dash it doesn't grant gets no movement allowance.
@@ -400,23 +484,39 @@ namespace LoveShot.Multiplayer
 
         // Host: a hit by `team`. Returns false if the shot passes
         // through: own team (no friendly fire) or conversion immunity. Player shots also lovestruck.
-        public bool ServerReceiveLove(int team, float power, bool fromPlayer)
+        public bool ServerReceiveLove(int team, int converterSlot, float power, bool fromPlayer)
         {
             if (!IsServer || !MPTeams.IsTeam(team) || team == Team || IsConversionImmune) return false;
             if (fromPlayer) TryStrike();
-            if (capture.ApplyHit(team, power, Slot)) ServerOnConverted(team);
+            int previousTeam = Team;
+            if (capture.ApplyHit(team, power, Slot)) ServerOnConverted(previousTeam, team, converterSlot);
             return true;
         }
 
-        // Host: this player now fights for `team`. Immunity starts at once, so later hits in the same
-        // frame (simultaneous projectiles, explosions) can't convert them again.
-        void ServerOnConverted(int team)
+        // Host: this player now fights for `team`. In free-for-all the lead is privileged: when the lead falls,
+        // everyone on their team falls with them (and their NPCs), so a team never outlives its starting player.
+        void ServerOnConverted(int previousTeam, int team, int converterSlot)
         {
+            ServerJoinTeam(team, converterSlot);
+            bool leadFell = previousTeam == Slot && MPLobby.Instance != null && MPLobby.Instance.Mode == MPLobby.TeamMode.FreeForAll;
+            if (leadFell)
+                foreach (MPPlayer member in all)
+                {
+                    if (member == this || member.Team != previousTeam) continue;
+                    member.capture.SetOwner(team, member.Slot);
+                    member.ServerJoinTeam(team, converterSlot);
+                }
+            if (MPMatch.Instance != null) MPMatch.Instance.OnPlayerConverted();
+        }
+
+        // Host: starts the conversion immunity (so later hits in the same frame, like simultaneous projectiles
+        // and explosions, can't convert again) and moves everything this player personally owns to `team`.
+        void ServerJoinTeam(int team, int converterSlot)
+        {
+            followSlot.Value = converterSlot;
             conversionImmuneUntil.Value = Now + conversionImmunity;
-            // Everything this player personally owns changes team with them (personal ownership stays).
             foreach (MPNpc npc in MPNpc.All)
                 if (npc.PersonalOwner == Slot && npc.Team != team) npc.Capture.SetOwner(team, Slot);
-            if (MPMatch.Instance != null) MPMatch.Instance.OnPlayerConverted();
         }
     }
 }

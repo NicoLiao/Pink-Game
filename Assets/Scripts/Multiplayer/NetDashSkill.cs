@@ -13,6 +13,8 @@ namespace LoveShot.Multiplayer
         public override float Cooldown => player.DashCooldown;
         public override float CooldownRemaining => player.DashCooldownRemaining;
         public override bool IsReady => CooldownRemaining <= 0f;
+        // Zombies follow their converter and can't dash.
+        public override bool IsDisabled => player.IsZombie;
 
         public override bool TryActivate(Vector2 direction) => player.TryDash(direction);
     }

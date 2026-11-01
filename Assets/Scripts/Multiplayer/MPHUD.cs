@@ -4,8 +4,8 @@ using UnityEngine;
 namespace LoveShot.Multiplayer
 {
     // Multiplayer HUD: timer, 3-2-1-GO, a live team leaderboard (members + points), your skill bar, and the results
-    // screen (winning team, final points and ranks, Return to Lobby for the host, Main Menu for everyone).
-    // Row i of each array belongs together (root, color swatch, name label, count label).
+    // screen (winning team; one ORIGINAL | ZOMBIES + score row per remaining team with an arrow over you; Return
+    // to Lobby for the host, Main Menu for everyone). Row i of the leaderboard arrays belongs together.
     public class MPHUD : MonoBehaviour
     {
         [SerializeField] TMP_Text timerText;
@@ -13,23 +13,29 @@ namespace LoveShot.Multiplayer
         [SerializeField] SkillBarUI skillBar;
 
         [Header("Leaderboard")]
-        [SerializeField] GameObject[] boardRows;
-        [SerializeField] UnityEngine.UI.Image[] boardSwatches;
-        [Tooltip("Team symbols for the leaderboard swatches.")]
+        [Tooltip("One row per possible team is instantiated under Board Root (give it a layout group).")]
+        [SerializeField] MPLeaderboardRow boardRowPrefab;
+        [SerializeField] Transform boardRoot;
+        [Tooltip("Team symbols for the leaderboard swatches and result icons.")]
         [SerializeField] TeamStyle teamStyle;
-        [SerializeField] TMP_Text[] boardNames;
-        [SerializeField] TMP_Text[] boardCounts;
 
         [Header("Results")]
         [SerializeField] GameObject resultPanel;
         [SerializeField] TMP_Text resultTitle;
-        [SerializeField] GameObject[] resultRows;
-        [SerializeField] UnityEngine.UI.Image[] resultSwatches;
-        [SerializeField] TMP_Text[] resultNames;
-        [SerializeField] TMP_Text[] resultCounts;
+        [Tooltip("One row per possible team is instantiated under Result Rows Root (give it a layout group).")]
+        [SerializeField] MPResultRow resultRowPrefab;
+        [SerializeField] Transform resultRowsRoot;
+        [Tooltip("Arrow shown above your own icon on the results screen (pivot at its bottom).")]
+        [SerializeField] RectTransform youArrow;
         [SerializeField] GameObject lobbyButton;
         [SerializeField] TMP_Text waitingForHostText;
         [SerializeField] GameObject firstSelectedOnResults;
+
+        [Header("Text")]
+        [SerializeField] string matchOverText = "MATCH OVER";
+        [SerializeField] string tieText = "IT'S A TIE!";
+        [Tooltip("{0} = winning team name.")]
+        [SerializeField] string winsFormat = "{0} WINS!";
 
         [Header("Readability")]
         [Tooltip("HUD panels that turn see-through while your own character is behind them.")]
@@ -47,8 +53,8 @@ namespace LoveShot.Multiplayer
         float playStartTime = float.NegativeInfinity;
         float resultShownTime = float.NegativeInfinity;
         MPMatch boundMatch;
-
-        static readonly string[] ordinals = { "1st", "2nd", "3rd", "4th" };
+        MPLeaderboardRow[] boardRows;
+        MPResultRow[] resultRows;
 
         void OnEnable() => MPPlayer.LocalPlayerSpawned += BindSkills;
 
@@ -56,6 +62,13 @@ namespace LoveShot.Multiplayer
 
         void Start()
         {
+            boardRows = new MPLeaderboardRow[MPTeams.MaxTeams];
+            resultRows = new MPResultRow[MPTeams.MaxTeams];
+            for (int i = 0; i < MPTeams.MaxTeams; i++)
+            {
+                if (boardRowPrefab != null && boardRoot != null) boardRows[i] = Instantiate(boardRowPrefab, boardRoot);
+                if (resultRowPrefab != null && resultRowsRoot != null) resultRows[i] = Instantiate(resultRowPrefab, resultRowsRoot);
+            }
             if (resultPanel != null) resultPanel.SetActive(false);
             if (MPPlayer.Local != null) BindSkills(MPPlayer.Local);
         }
@@ -129,7 +142,19 @@ namespace LoveShot.Multiplayer
         void UpdateLeaderboard(MPMatch match)
         {
             var ranking = match != null ? match.Ranking() : null;
-            FillRows(ranking, boardRows, boardSwatches, boardNames, boardCounts, withRank: false);
+            if (boardRows == null) return;
+            for (int i = 0; i < boardRows.Length; i++)
+            {
+                if (boardRows[i] == null) continue;
+                bool used = ranking != null && i < ranking.Count;
+                boardRows[i].gameObject.SetActive(used);
+                if (!used) continue;
+                MPScore score = ranking[i].score;
+                // Team on the first line, its players (converted ones included) smaller underneath.
+                boardRows[i].Show(teamStyle != null ? teamStyle.SymbolOf(score.Team) : null, MPTeams.ColorOf(score.Team),
+                    $"{TeamName(score.Team).ToUpperInvariant()}\n<size=72%>{MembersText(score.Team)}</size>",
+                    score.Points.ToString(), MPTeams.TextColorOf(score.Team));
+            }
         }
 
         void ShowResults(MPMatch match)
@@ -144,22 +169,22 @@ namespace LoveShot.Multiplayer
             }
 
             var ranking = match.Ranking();
-            FillRows(ranking, resultRows, resultSwatches, resultNames, resultCounts, withRank: true);
+            FillResultRows(ranking);
 
             if (resultTitle != null)
             {
                 int winners = 0;
                 foreach (var (_, rank) in ranking) if (rank == 1) winners++;
-                if (ranking.Count == 0) resultTitle.text = "MATCH OVER";
+                if (ranking.Count == 0) resultTitle.text = matchOverText;
                 else if (winners > 1)
                 {
-                    resultTitle.text = "IT'S A TIE!";
+                    resultTitle.text = tieText;
                     resultTitle.color = timerColor;
                 }
                 else
                 {
                     MPScore top = ranking[0].score;
-                    resultTitle.text = $"{TeamName(top.Team).ToUpperInvariant()} WINS!";
+                    resultTitle.text = string.Format(winsFormat, TeamName(top.Team).ToUpperInvariant());
                     resultTitle.color = MPTeams.TextColorOf(top.Team);
                 }
             }
@@ -173,36 +198,26 @@ namespace LoveShot.Multiplayer
             resultPanel.transform.localScale = Vector3.one * Mathf.Lerp(0.9f, 1f, 1f - (1f - t) * (1f - t));
         }
 
-        void FillRows(System.Collections.Generic.List<(MPScore score, int rank)> ranking, GameObject[] rows,
-            UnityEngine.UI.Image[] swatches, TMP_Text[] names, TMP_Text[] counts, bool withRank)
+        void FillResultRows(System.Collections.Generic.List<(MPScore score, int rank)> ranking)
         {
-            if (rows == null) return;
-            for (int i = 0; i < rows.Length; i++)
+            if (resultRows == null) return;
+            UnityEngine.UI.Image local = null;
+            for (int i = 0; i < resultRows.Length; i++)
             {
-                bool used = ranking != null && i < ranking.Count;
-                if (rows[i] != null) rows[i].SetActive(used);
+                if (resultRows[i] == null) continue;
+                bool used = i < ranking.Count;
+                resultRows[i].gameObject.SetActive(used);
                 if (!used) continue;
-
-                (MPScore score, int rank) = ranking[i];
-                if (i < swatches.Length && swatches[i] != null)
-                {
-                    swatches[i].color = MPTeams.ColorOf(score.Team);
-                    Sprite symbol = teamStyle != null ? teamStyle.SymbolOf(score.Team) : null;
-                    if (symbol != null) swatches[i].sprite = symbol;
-                }
-                if (i < names.Length && names[i] != null)
-                {
-                    string prefix = withRank ? $"{ordinals[Mathf.Clamp(rank - 1, 0, ordinals.Length - 1)]}  " : "";
-                    // Team on the first line, its players (converted ones included) smaller underneath.
-                    names[i].text = $"{prefix}{TeamName(score.Team).ToUpperInvariant()}\n<size=72%>{MembersText(score.Team)}</size>";
-                    names[i].color = MPTeams.TextColorOf(score.Team);
-                }
-                if (i < counts.Length && counts[i] != null)
-                {
-                    counts[i].text = withRank ? $"{score.Points} pt{(score.Points == 1 ? "" : "s")}" : score.Points.ToString();
-                    counts[i].color = MPTeams.TextColorOf(score.Team);
-                }
+                UnityEngine.UI.Image icon = resultRows[i].Fill(ranking[i].score, teamStyle);
+                if (icon != null) local = icon;
             }
+            if (youArrow == null) return;
+            youArrow.gameObject.SetActive(local != null);
+            if (local == null) return;
+            // Just above the top edge of your icon.
+            var corners = new Vector3[4];
+            ((RectTransform)local.transform).GetWorldCorners(corners);
+            youArrow.position = (corners[1] + corners[2]) * 0.5f;
         }
 
         // "Alice" for a solo team, "Alice + Bob" once players have been converted into it.

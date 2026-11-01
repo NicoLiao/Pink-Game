@@ -992,6 +992,15 @@ MonoBehaviour:
   struckSpeedMultiplier: 0.35
   struckImmunity: 1
   conversionImmunity: 3
+  zombieSideDistance: 1.6
+  zombieStopDistance: 0.3
+  zombieCatchUpDistance: 6
+  zombieCatchUpMultiplier: 1.25
+  obstacleMask:
+    serializedVersion: 2
+    m_Bits: 64
+  lookAhead: 0.9
+  bodyRadius: 0.4
   speedTolerance: 1.3
   burstSeconds: 0.75
   aimSyncAngle: 2

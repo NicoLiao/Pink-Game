@@ -17,6 +17,9 @@ namespace LoveShot
         [SerializeField] Color chargingIconColor = new Color(1f, 1f, 1f, 0.35f);
         [SerializeField] Color readyLabelColor = new Color(0.9f, 0.25f, 0.55f);
         [SerializeField] Color chargingLabelColor = new Color(0.45f, 0.28f, 0.42f);
+        [Tooltip("Icon and label colors while the skill can't be used at all (e.g. a zombie's Dash).")]
+        [SerializeField] Color disabledIconColor = new Color(0.5f, 0.5f, 0.5f, 0.35f);
+        [SerializeField] Color disabledLabelColor = new Color(0.55f, 0.5f, 0.55f);
         [SerializeField, Min(1f)] float readyPopScale = 1.25f;
         [SerializeField, Min(0.01f)] float readyPopDuration = 0.35f;
 
@@ -41,18 +44,19 @@ namespace LoveShot
 
             float cooldown = Mathf.Max(skill.Cooldown, 0.0001f);
             float remaining = Mathf.Max(0f, skill.CooldownRemaining);
-            bool ready = skill.IsReady;
+            bool disabled = skill.IsDisabled;
+            bool ready = skill.IsReady && !disabled;
             if (ready && !wasReady) readyPopStart = Time.unscaledTime;
             wasReady = ready;
 
-            if (cooldownOverlay != null) cooldownOverlay.fillAmount = ready ? 0f : Mathf.Clamp01(remaining / cooldown);
-            if (icon != null) icon.color = ready ? readyIconColor : chargingIconColor;
+            if (cooldownOverlay != null) cooldownOverlay.fillAmount = ready || disabled ? 0f : Mathf.Clamp01(remaining / cooldown);
+            if (icon != null) icon.color = disabled ? disabledIconColor : ready ? readyIconColor : chargingIconColor;
 
             if (labelText != null)
             {
                 string name = skill.DisplayName.ToUpperInvariant();
-                labelText.text = ready ? $"{name}  READY" : $"{name}  {remaining:0.0}s";
-                labelText.color = ready ? readyLabelColor : chargingLabelColor;
+                labelText.text = disabled ? name : ready ? $"{name}  READY" : $"{name}  {remaining:0.0}s";
+                labelText.color = disabled ? disabledLabelColor : ready ? readyLabelColor : chargingLabelColor;
             }
 
             float t = (Time.unscaledTime - readyPopStart) / readyPopDuration;

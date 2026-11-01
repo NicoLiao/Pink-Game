@@ -65,7 +65,8 @@ namespace LoveShot.Multiplayer
                 sprite.color = MPTeams.ColorOf(team);
                 int style = (int)shot.Style;
                 if (styleSprites != null && style < styleSprites.Length && styleSprites[style] != null) sprite.sprite = styleSprites[style];
-                Sprite symbol = shot.Style == ProjectileStyle.Heart && teamStyle != null ? teamStyle.SymbolOf(team) : null;
+                // Heart-style shots wear the shooter's own symbol (identity); the color follows their current team.
+                Sprite symbol = shot.Style == ProjectileStyle.Heart && teamStyle != null ? teamStyle.SymbolOf(creditSlot) : null;
                 if (symbol != null) sprite.sprite = symbol;
             }
             FaceVelocity();

@@ -23,6 +23,8 @@ namespace LoveShot
         public abstract float Cooldown { get; }
         public abstract float CooldownRemaining { get; }
         public virtual bool IsReady => CooldownRemaining <= 0f;
+        // True while the skill can't be used at all (the HUD greys its slot out).
+        public virtual bool IsDisabled => false;
 
         // direction: the way the player is moving, or last moved. Returns false if the skill can't fire now.
         public abstract bool TryActivate(Vector2 direction);

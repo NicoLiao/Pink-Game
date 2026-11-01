@@ -17,3 +17,21 @@ MonoBehaviour:
   - {fileID: 21300000, guid: 619b67937f2b6e940971535f3976ec87, type: 3}
   - {fileID: 21300000, guid: 0413ae4226075cf4f981269501477855, type: 3}
   - {fileID: 21300000, guid: 3e077b42bc06ae740a9371e30e4fb115, type: 3}
+  names:
+  - Pink
+  - Berry
+  - Coral
+  - Blush
+  colors:
+  - {r: 0.5943396, g: 0.5943396, b: 0.5943396, a: 1}
+  - {r: 0.38679248, g: 0.38679248, b: 0.38679248, a: 1}
+  - {r: 0.8490566, g: 0.8490566, b: 0.8490566, a: 1}
+  - {r: 0.9339623, g: 0.9339623, b: 0.9339623, a: 1}
+  textColors:
+  - {r: 0.86, g: 0.2, b: 0.47, a: 1}
+  - {r: 0.55, g: 0.1, b: 0.36, a: 1}
+  - {r: 0.86, g: 0.33, b: 0.24, a: 1}
+  - {r: 0.78, g: 0.38, b: 0.55, a: 1}
+  neutralName: Neutral
+  neutralColor: {r: 1, g: 1, b: 1, a: 1}
+  neutralTextColor: {r: 0.45, g: 0.28, b: 0.42, a: 1}

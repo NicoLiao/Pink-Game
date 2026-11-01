@@ -272,7 +272,7 @@ namespace LoveShot.Multiplayer
             MPPlayer credit = MPPlayer.ForSlot(creditSlot);
             if (credit == null) return false;
             int team = credit.Team;
-            if (target.Player != null) return target.Player.ServerReceiveLove(team, power, fromPlayer);
+            if (target.Player != null) return target.Player.ServerReceiveLove(team, creditSlot, power, fromPlayer);
             if (!target.CanBeAffectedBy(team)) return false;
             target.ApplyHit(team, power, creditSlot);
             return true;
@@ -414,7 +414,7 @@ namespace LoveShot.Multiplayer
         }
 
         // Client, owner: shows its own weapon shot immediately, before the host confirms it.
-        public void PredictWeapon(MPWeapon weapon, int team, Vector2 origin, Vector2 direction, ulong shooterObjectId, ushort sequence)
+        public void PredictWeapon(MPWeapon weapon, int team, int creditSlot, Vector2 origin, Vector2 direction, ulong shooterObjectId, ushort sequence)
         {
             if (IsServer || weapon == null || projectilePrefab == null) return;
             // Unconfirmed leftovers (e.g. a weapon swap changed the pellet count) are cosmetic; don't let them pile up.
@@ -424,7 +424,7 @@ namespace LoveShot.Multiplayer
             {
                 Vector2 velocity = PelletDirection(weapon, direction, i).normalized * shot.Speed;
                 MPProjectile projectile = Instantiate(projectilePrefab, origin, Quaternion.identity);
-                projectile.Launch(this, 0, team, MPTeams.Neutral, velocity, shot, true, shooterObjectId, authoritative: false);
+                projectile.Launch(this, 0, team, creditSlot, velocity, shot, true, shooterObjectId, authoritative: false);
                 uint key = PredictKey(sequence, i);
                 projectile.PredictKey = key;
                 predicted[key] = projectile;

@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: DefaultGun
   m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPWeapon
   displayName: Love Gun
-  icon: {fileID: 21300000, guid: 08185a10160b05d4990b03903f33721b, type: 3}
+  icon: {fileID: 21300000, guid: a7b8c9d0e1f24a3b8c5d6e7f8091a2b3, type: 3}
   duration: 30
   fireCooldown: 0.25
   pellets: 1

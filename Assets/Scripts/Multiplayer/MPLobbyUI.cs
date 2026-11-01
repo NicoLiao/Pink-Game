@@ -22,7 +22,13 @@ namespace LoveShot.Multiplayer
         [Tooltip("Host-only buttons between neighbouring icons (3) that swap the two.")]
         [SerializeField] UnityEngine.UI.Button[] swapButtons;
         [SerializeField] UnityEngine.UI.Button modeButton;
-        [SerializeField] TMP_Text modeLabel;
+        [Tooltip("Inside the mode button: the icon for the current mode is instantiated here, one per mode.")]
+        [SerializeField] RectTransform modeIconRoot;
+        [SerializeField] MPModeIcon freeForAllIconPrefab;
+        [SerializeField] MPModeIcon twoVsTwoIconPrefab;
+        [Tooltip("Host toggle for zombie mode (FFA only: converted players walk beside their lead).")]
+        [SerializeField] UnityEngine.UI.Button zombieButton;
+        [SerializeField] TMP_Text zombieLabel;
         [SerializeField] UnityEngine.UI.Button startButton;
         [SerializeField] TMP_Text startLabel;
         [SerializeField, Range(0f, 1f)] float emptyIconAlpha = 0.35f;
@@ -35,14 +41,16 @@ namespace LoveShot.Multiplayer
         [SerializeField] string copiedText = "COPIED!";
         [Tooltip("{0} = players, {1} = max players.")]
         [SerializeField] string countFormat = "PLAYERS {0}/{1}";
-        [SerializeField] string freeForAllText = "FFA";
-        [SerializeField] string twoVsTwoText = "2v2";
+        [SerializeField] string zombieOnText = "ZOMBIES: ON";
+        [SerializeField] string zombieOffText = "ZOMBIES: OFF";
         [SerializeField] string startText = "START GAME";
         [Tooltip("{0} = players needed.")]
         [SerializeField] string needPlayersFormat = "NEED {0}+ PLAYERS";
         [SerializeField] string needBothSidesText = "NEED BOTH SIDES";
 
         float copiedUntil = float.NegativeInfinity;
+        MPModeIcon freeForAllIcon;
+        MPModeIcon twoVsTwoIcon;
 
         void Awake()
         {
@@ -52,6 +60,19 @@ namespace LoveShot.Multiplayer
                 swapButtons[i].onClick.AddListener(() => Swap(position));
             }
             if (modeButton != null) modeButton.onClick.AddListener(ToggleMode);
+            if (modeIconRoot != null)
+            {
+                if (freeForAllIconPrefab != null) freeForAllIcon = Instantiate(freeForAllIconPrefab, modeIconRoot);
+                if (twoVsTwoIconPrefab != null) twoVsTwoIcon = Instantiate(twoVsTwoIconPrefab, modeIconRoot);
+                foreach (MPModeIcon icon in new[] { freeForAllIcon, twoVsTwoIcon })
+                {
+                    if (icon == null) continue;
+                    var rect = (RectTransform)icon.transform;
+                    rect.anchoredPosition = Vector2.zero;
+                    rect.localScale = Vector3.one * (modeIconRoot.rect.width > 0f ? Mathf.Min(modeIconRoot.rect.width, modeIconRoot.rect.height) / 100f : 1f);
+                }
+            }
+            if (zombieButton != null) zombieButton.onClick.AddListener(ToggleZombies);
         }
 
         void Update()
@@ -74,7 +95,14 @@ namespace LoveShot.Multiplayer
                 if (separators[gap] != null) separators[gap].SetActive(!twoVsTwo || gap == 1);
             foreach (UnityEngine.UI.Button swap in swapButtons) swap.gameObject.SetActive(host);
             if (modeButton != null) modeButton.interactable = host;
-            if (modeLabel != null) modeLabel.text = twoVsTwo ? twoVsTwoText : freeForAllText;
+            if (freeForAllIcon != null) freeForAllIcon.gameObject.SetActive(!twoVsTwo);
+            if (twoVsTwoIcon != null) twoVsTwoIcon.gameObject.SetActive(twoVsTwo);
+            if (zombieButton != null)
+            {
+                zombieButton.gameObject.SetActive(!twoVsTwo);
+                zombieButton.interactable = host;
+            }
+            if (zombieLabel != null) zombieLabel.text = lobby != null && lobby.ZombieMode ? zombieOnText : zombieOffText;
 
             bool canStart = lobby != null && lobby.CanStart;
             int needed = lobby != null ? lobby.MinPlayersToStart : 2;
@@ -119,6 +147,12 @@ namespace LoveShot.Multiplayer
             MPLobby lobby = MPLobby.Instance;
             if (lobby == null) return;
             lobby.SetModeRpc(lobby.Mode == MPLobby.TeamMode.FreeForAll ? MPLobby.TeamMode.TwoVsTwo : MPLobby.TeamMode.FreeForAll);
+        }
+
+        void ToggleZombies()
+        {
+            MPLobby lobby = MPLobby.Instance;
+            if (lobby != null) lobby.SetZombieModeRpc(!lobby.ZombieMode);
         }
 
         public void CopyCode()
