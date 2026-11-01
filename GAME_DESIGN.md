@@ -14,7 +14,7 @@ Numbers are current Inspector defaults (tunable), not final balance.
 
 ## 2. Controls
 - **[Confirmed]** WASD move, mouse aim, left-click shoot, Space dash (with cooldown).
-- **[Proposed]** Holding left-click auto-fires at the weapon's fire rate.
+- **[Proposed]** Holding left-click charges the bow; releasing fires.
 - **[Confirmed]** Dash: Space, **20-second cooldown**, in the current movement direction or else the last one, can't be used on cooldown, respects walls and obstacles. Cooldown configurable in the Inspector (`MPPlayer.dashCooldown`).
 - **[Proposed]** Dash details: 3× move speed for 0.2s, about 4 units, cooldown counted from the start of the dash. It ends crisply at normal speed.
 - **[Confirmed]** A reusable skill system with a HUD skill slot. Dash is the only skill for now. The slot shows the Dash icon, a SPACE key badge, a countdown, a radial cooldown overlay that drains as it recharges, and a fully lit icon with a pop when ready.
@@ -67,14 +67,12 @@ Numbers are current Inspector defaults (tunable), not final balance.
 - **[Proposed]** The match ends early once every remaining player is on the same team (`MPMatch.endWhenOneTeamLeft`, on). With 2 players, the first player conversion therefore wins the match.
 - **[Proposed]** Visual identity: the body shows the current team's color; a small heart in the middle keeps the player's own identity color, so a converted player is still recognizable. Conversion plays a big two-color heart burst, a color blend and a pop.
 
-**Weapons (Update 5)**
-- **[Confirmed]** Default Gun (unlimited, everyone's starting weapon), Bounce Gun, Shotgun, Rocket Launcher. Temporary weapons spawn as pickups at random free spots (never in walls/obstacles or on players), are collected by walking over them (one player only), last 30s, then you're back to the Default Gun; another pickup replaces the current one and restarts the 30s. Uncollected pickups disappear after a while. Weapon HUD: icon, name, seconds left and a draining bar.
-- **[Proposed]** Numbers (assets in `Assets/Settings/Weapons`, tunable):
-  - Default Gun ("Love Gun"): 20 love, 0.25s, speed 18, 1.33s flight.
-  - Bounce Gun: 16 love, 0.3s, speed 19.5, 1.73s flight, up to 3 ricochets off walls and obstacles.
-  - Shotgun: 5 pellets of 9 love in a 36° cone, 0.8s, short range (0.24s at speed 22.5, about 5 units). A point-blank blast is 45 love, 18% of a player.
-  - Rocket Launcher: 1.3s, slow heart rocket (speed 12, 1.07s), explodes on impact with anything it can affect, on walls or at the end of its flight; radius 3, 70 love at the center down to 35% at the edge. Each character is hit once per explosion. Teammates and immune players don't trigger it.
-- **[Proposed]** Pickups: first after 5s, then every 9s, at most 3 at once, each lasts 20s (blinks in the last 3s). Weights: Bounce 1, Shotgun 1, Rocket 0.7.
+**Weapons (reworked 2026-11-01: charged bow + stacking modifiers)**
+- **[Confirmed]** Everyone always holds the Love Bow: hold left-click to charge, release to shoot; a longer charge means a faster, harder shot (releasing before 30% charge fires nothing). Pickups are now *modifiers* that stack with the bow and with each other, each on its own 30s timer (picking one up again restarts that timer): **Rocket** (explodes), **Bounce** (ricochets), **Shotgun** (5 pellets) and **Gun** (charges in half the time). Uncollected pickups disappear after a while. Zombies fire the shot their player fired (same charge and modifiers). The host checks that enough time passed for the charge that was sent.
+- **[Proposed]** Numbers (assets in `Assets/Settings/Weapons`; index 0 = bow, the rest are modifiers):
+  - Bow: full charge 1.2s, 0.15s recovery, 60 love at full charge (15% at zero), speed 18 (half at zero), 1.4s flight.
+  - Rocket: love x2.5, speed x0.75, bigger, charge x1.25, explodes (radius 3, 35% at the edge). Bounce: 3 extra ricochets, flight x1.3, love x0.85. Shotgun: +4 pellets in a 36° cone, love x0.45 each, flight x0.6. Gun: charge x0.5.
+- **[Proposed]** Pickups: first after 5s, then every 9s, at most 3 at once, each lasts 20s (blinks in the last 3s). Weights: Bounce 1, Shotgun 1, Rocket 0.7, Gun 1.
 
 **Special NPCs (Update 5)**
 - **[Confirmed]** Normal NPCs stay the majority; special types are rarer, the Celebrity rarest. Spawn weights and limits are Inspector values on `MPMatch` (`npcTypes`).
@@ -117,3 +115,22 @@ Numbers are current Inspector defaults (tunable), not final balance.
 - **[Confirmed]** Health orb: once you've been converted (you're on a team other than your starting one), that team's symbol in its color shows to the right of the orb.
 - **[Confirmed]** The lobby's mode button shows an icon instead of "FFA"/"2v2": a square button with four team-colored blobs around an X arrow (free-for-all) or two blobs per side around a horizontal arrow (2v2). The icons are the prefabs `MPModeIconFreeForAll` / `MPModeIconTwoVsTwo`, instantiated by `MPLobbyUI`, with blob colors read from `TeamStyle` at runtime.
 - **[Confirmed]** Heart-style projectiles (default gun, bounce, shotgun, NPC shots) wear the *shooter's own symbol* (identity), tinted in their current team's color, so a converted player or a zombie's mirrored shots still read as theirs. NPC shots use the symbol of the player who owns the NPC. Rockets and Cupid arrows keep their own sprites.
+
+- **[Confirmed]** Weapon HUD (charged bow): the bow orb with a ring that sweeps round as you charge (glow blinks at full charge) and, under it, a small orb per active modifier that drains as its timer runs out.
+
+- **[Confirmed]** Projectiles: bow and NPC shots are an arrow whose head is the shooter's own symbol (tinted by current team); a rocket is the rocket (team color) with the shooter's symbol on it. Cupid's arrow is unchanged. The bow icon shows the arrow with a heart tip and the bow bulging toward it.
+
+**Abilities (Space and Shift slots)**
+- **[Confirmed]** Every player has two abilities, one on Space and one on Shift, each chosen in the lobby: two small orbs under your own icon (only you see them, labelled SPACE / SHIFT); clicking one opens a row of all four abilities below, and picking the one the other slot holds swaps the two (defaults Dash on Space, Group Heal on Shift). Zombies can't use them.
+  - **Dash:** as before (20s cooldown).
+  - **Group Heal:** teammates (players and NPCs) within 9 units lose any capture progress against them (full loyalty). **[Proposed]** 25s cooldown.
+  - **Spawn Powerup:** drops a random modifier pickup 2 units ahead of your aim; anyone can take it. **[Proposed]** 30s cooldown.
+  - **Duplicate:** once per match. Every follower of yours except the Celebrity (specials included) and any already duplicated gets a copy next to it; originals and copies are smaller (x0.75) and take double love per hit (half the health). Does nothing, and isn't spent, if you have no eligible followers.
+
+- **[Confirmed]** Ability name, icon, cooldown and numbers are ScriptableObjects (`MPAbilityDef`) in `Assets/Settings/Resources/Abilities`, one per ability (Dash, GroupHeal, Powerup, Duplicate); `MPPlayer` and the lobby picker read them.
+
+- **[Confirmed]** Ability name, icon, cooldown and numbers are ScriptableObjects (`MPAbilityDef`) in `Assets/Settings/Resources/Abilities`, one per ability (Dash, GroupHeal, Powerup, Duplicate); `MPPlayer` and the lobby picker read them.
+
+- **[Confirmed]** End screen: each player icon has the player's name under it (in their identity text color).
+
+- **[Confirmed]** Player name: a name field on the main menu's first page (remembered between sessions, 16 letters max; empty = a random Guest name). If someone already has a name in the lobby, the player who arrives later gets " #2", " #3"...

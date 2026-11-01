@@ -62,7 +62,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  - {fileID: 7724059223563325780, guid: c57c8c6fd94596b42b8cca515e39210c, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -108,8 +108,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Player
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: c57c8c6fd94596b42b8cca515e39210c, type: 2}
+  m_sharedMaterial: {fileID: 7724059223563325780, guid: c57c8c6fd94596b42b8cca515e39210c, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -718,6 +718,7 @@ GameObject:
   - component: {fileID: 5407942766277590036}
   - component: {fileID: 9130114834970622588}
   - component: {fileID: 1723310781695122604}
+  - component: {fileID: 4341589002374955999}
   - component: {fileID: 6889987409774270430}
   - component: {fileID: 2764260016746285837}
   m_Layer: 0
@@ -983,11 +984,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPPlayer
   ShowTopMostFoldoutHeaderGroup: 1
   spawnOffset: 0.6
-  holdToFire: 1
   fireTimingGrace: 0.4
   maxOriginError: 3.5
-  dashCooldown: 20
   dashGrace: 0.3
+  abilityRingPrefab: {fileID: 1266542721413796787, guid: 9243a3c2ed8067f4fb524e8f045e3d41, type: 3}
   struckDuration: 0.6
   struckSpeedMultiplier: 0.35
   struckImmunity: 1
@@ -1005,6 +1005,23 @@ MonoBehaviour:
   burstSeconds: 0.75
   aimSyncAngle: 2
   aimIndicator: {fileID: 9130114834970622588}
+--- !u!114 &4341589002374955999
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4341589002374955875}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6e8a0c2d4f5b4731a9c1e3f5a7b90d24, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.NetAbilitySkill
+  displayName: Ability
+  key: 1
+  keyLabel: SPACE
+  icon: {fileID: 21300000, guid: a9f546c1a94ab14489a74f288254e119, type: 3}
+  abilitySlot: 0
 --- !u!114 &6889987409774270430
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1014,13 +1031,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 4341589002374955875}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5805c2e55a71f0741b2023f8cabde481, type: 3}
+  m_Script: {fileID: 11500000, guid: 6e8a0c2d4f5b4731a9c1e3f5a7b90d24, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.NetDashSkill
-  displayName: Dash
-  key: 1
-  keyLabel: 
+  m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.NetAbilitySkill
+  displayName: Ability
+  key: 51
+  keyLabel: SHIFT
   icon: {fileID: 21300000, guid: a9f546c1a94ab14489a74f288254e119, type: 3}
+  abilitySlot: 1
 --- !u!114 &2764260016746285837
 MonoBehaviour:
   m_ObjectHideFlags: 0

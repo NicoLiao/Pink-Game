@@ -918,14 +918,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1892260741
+  GlobalObjectIdHash: 753838106
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
   Ownership: 1
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
-  m_InScenePlaced: 1
+  m_InScenePlaced: 0
   ActiveSceneSynchronization: 0
   SceneMigrationSynchronization: 0
   SpawnWithObservers: 1
@@ -1027,7 +1027,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPCapture
   ShowTopMostFoldoutHeaderGroup: 1
   captureAmount: 100
-  stealAmount: 200
+  stealAmount: 100
   sensitivity: 1
   ownTeamHeals: 1
   recoveryDelay: 0
@@ -1079,6 +1079,7 @@ MonoBehaviour:
   fireCooldown: 1.5
   projectileSpeed: 22.5
   projectileLifetime: 1.3333334
+  projectileScale: 1
   shotPower: 12
   spawnOffset: 0.475
   obstacleMask:
@@ -1088,7 +1089,7 @@ MonoBehaviour:
   bodyRadius: 0.375
   stuckTime: 0.8
   playerTargetPenalty: 1.8
-  arrowScale: 1.6
+  arrowScale: 3
 --- !u!114 &570305746463451536
 MonoBehaviour:
   m_ObjectHideFlags: 0

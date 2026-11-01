@@ -33,6 +33,21 @@ namespace LoveShot.Multiplayer
 
         public ISession Session { get; private set; }
         public string LocalPlayerName { get; private set; }
+        const string NameKey = "LoveShot.PlayerName";
+        const int MaxNameLength = 16;
+
+        // The name saved from the last time the player typed one (empty if none).
+        public static string SavedName => PlayerPrefs.GetString(NameKey, "");
+
+        // Takes the typed name (empty keeps the current one) and remembers it for next time.
+        public void SetLocalName(string typed)
+        {
+            string clean = (typed ?? "").Trim();
+            if (clean.Length == 0) return;
+            if (clean.Length > MaxNameLength) clean = clean.Substring(0, MaxNameLength);
+            LocalPlayerName = clean;
+            PlayerPrefs.SetString(NameKey, clean);
+        }
         public int MaxPlayers => maxPlayers;
         public string LobbySceneName => lobbySceneName;
         public string ArenaSceneName => arenaSceneName;
@@ -61,7 +76,7 @@ namespace LoveShot.Multiplayer
             Instance = this;
             DontDestroyOnLoad(gameObject);
             network = GetComponent<NetworkManager>();
-            LocalPlayerName = $"Guest{UnityEngine.Random.Range(1000, 10000)}";
+            LocalPlayerName = SavedName.Length > 0 ? SavedName : $"Guest{UnityEngine.Random.Range(1000, 10000)}";
             network.ConnectionApprovalCallback = ApproveConnection;
             network.OnServerStarted += OnServerStarted;
             network.OnClientStopped += OnClientStopped;

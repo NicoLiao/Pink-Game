@@ -43,6 +43,8 @@ namespace LoveShot.Multiplayer
         readonly NetworkVariable<int> hits = new(0);
 
         float lastHitTime;
+        // Host only: how much each hit counts (a duplicated NPC has half the health, so 2).
+        float healthMultiplier = 1f;
 
         public int Owner => owner.Value;
         // Player slot this character is credited to (NPCs: who recruited it; players: themselves). Neutral if none.
@@ -110,7 +112,7 @@ namespace LoveShot.Multiplayer
         {
             if (!IsServer || !CanBeAffectedBy(team) || power <= 0f) return false;
 
-            float delta = power * sensitivity / RequiredAmount;
+            float delta = power * sensitivity * healthMultiplier / RequiredAmount;
             int currentCapturer = capturer.Value;
             float current = progress.Value;
 
@@ -168,6 +170,20 @@ namespace LoveShot.Multiplayer
         {
             owner.Value = team;
             personalOwner.Value = slot;
+        }
+
+        // Host only: how much each hit counts, on top of the sensitivity.
+        public void ServerSetHealthMultiplier(float multiplier)
+        {
+            if (IsServer) healthMultiplier = Mathf.Max(0.01f, multiplier);
+        }
+
+        // Host only: restores full loyalty (drops whatever capture is in progress).
+        public void ServerHeal()
+        {
+            if (!IsServer) return;
+            capturer.Value = MPTeams.Neutral;
+            progress.Value = 0f;
         }
 
         // Host only: drops a capture in progress by `team` (used when a team has no players left).

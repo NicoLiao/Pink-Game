@@ -15,6 +15,8 @@ namespace LoveShot.Multiplayer
         [SerializeField] TeamStyle teamStyle;
         [Tooltip("The four icons, left to right.")]
         [SerializeField] UnityEngine.UI.Image[] icons;
+        [Tooltip("The player name under each icon position (empty while nobody holds it).")]
+        [SerializeField] TMP_Text[] playerNames;
         [Tooltip("Arrow above each icon position; shown over your own icon.")]
         [SerializeField] GameObject[] youMarkers;
         [Tooltip("Lines between neighbouring icons (3): all show in FFA, only the middle one in 2v2.")]
@@ -29,6 +31,13 @@ namespace LoveShot.Multiplayer
         [Tooltip("Host toggle for zombie mode (FFA only: converted players walk beside their lead).")]
         [SerializeField] UnityEngine.UI.Button zombieButton;
         [SerializeField] TMP_Text zombieLabel;
+        [Tooltip("Your ability picker: sits under your own icon in the row (only you see it). Two orbs (Space, Shift); clicking one opens a row of every ability below.")]
+        [SerializeField] RectTransform abilityPicker;
+        [SerializeField] RectTransform abilitySlotRoot;
+        [SerializeField] RectTransform abilityOptionRoot;
+        [SerializeField] MPAbilityOrb abilityOrbPrefab;
+        [Tooltip("Label under each of your two orbs.")]
+        [SerializeField] string[] abilityKeyLabels = { "SPACE", "SHIFT" };
         [SerializeField] UnityEngine.UI.Button startButton;
         [SerializeField] TMP_Text startLabel;
         [SerializeField, Range(0f, 1f)] float emptyIconAlpha = 0.35f;
@@ -51,6 +60,9 @@ namespace LoveShot.Multiplayer
         float copiedUntil = float.NegativeInfinity;
         MPModeIcon freeForAllIcon;
         MPModeIcon twoVsTwoIcon;
+        readonly System.Collections.Generic.List<MPAbilityOrb> slotOrbs = new();
+        readonly System.Collections.Generic.List<MPAbilityOrb> optionOrbs = new();
+        int openAbilitySlot = -1;
 
         void Awake()
         {
@@ -73,6 +85,23 @@ namespace LoveShot.Multiplayer
                 }
             }
             if (zombieButton != null) zombieButton.onClick.AddListener(ToggleZombies);
+            if (abilityOrbPrefab != null && abilitySlotRoot != null && abilityOptionRoot != null)
+            {
+                for (int i = 0; i < 2; i++)
+                {
+                    int abilitySlot = i;
+                    MPAbilityOrb orb = Instantiate(abilityOrbPrefab, abilitySlotRoot);
+                    orb.Bind(() => openAbilitySlot = openAbilitySlot == abilitySlot ? -1 : abilitySlot);
+                    slotOrbs.Add(orb);
+                }
+                for (int i = 0; i < System.Enum.GetValues(typeof(MPAbility)).Length; i++)
+                {
+                    int option = i;
+                    MPAbilityOrb orb = Instantiate(abilityOrbPrefab, abilityOptionRoot);
+                    orb.Bind(() => ChooseAbility(option));
+                    optionOrbs.Add(orb);
+                }
+            }
         }
 
         void Update()
@@ -104,6 +133,8 @@ namespace LoveShot.Multiplayer
             }
             if (zombieLabel != null) zombieLabel.text = lobby != null && lobby.ZombieMode ? zombieOnText : zombieOffText;
 
+            ShowAbility(lobby, network);
+
             bool canStart = lobby != null && lobby.CanStart;
             int needed = lobby != null ? lobby.MinPlayersToStart : 2;
             if (startButton != null)
@@ -132,6 +163,11 @@ namespace LoveShot.Multiplayer
                 Color color = MPTeams.ColorOf(slot);
                 icon.color = taken ? color : Color.Lerp(color, Color.white, emptyIconWash) * new Color(1f, 1f, 1f, emptyIconAlpha);
             }
+            if (playerNames != null && position < playerNames.Length && playerNames[position] != null)
+            {
+                playerNames[position].text = taken ? info.Name.ToString() : "";
+                playerNames[position].color = MPTeams.TextColorOf(slot);
+            }
             if (position < youMarkers.Length && youMarkers[position] != null)
                 youMarkers[position].SetActive(taken && network != null && info.ClientId == network.LocalClientId);
         }
@@ -147,6 +183,47 @@ namespace LoveShot.Multiplayer
             MPLobby lobby = MPLobby.Instance;
             if (lobby == null) return;
             lobby.SetModeRpc(lobby.Mode == MPLobby.TeamMode.FreeForAll ? MPLobby.TeamMode.TwoVsTwo : MPLobby.TeamMode.FreeForAll);
+        }
+
+        // Two small orbs under your own icon (Space, Shift); the open slot shows every ability as a row of orbs below.
+        void ShowAbility(MPLobby lobby, NetworkManager network)
+        {
+            MPPlayerInfo me = default;
+            bool known = lobby != null && network != null && lobby.TryGetPlayer(network.LocalClientId, out me);
+            if (abilityPicker != null) abilityPicker.gameObject.SetActive(known);
+            if (!known)
+            {
+                openAbilitySlot = -1;
+                return;
+            }
+
+            int position = lobby.PositionOf(me.Slot);
+            if (abilityPicker != null && position >= 0 && position < icons.Length && icons[position] != null)
+            {
+                Vector3 at = abilityPicker.position;
+                at.x = icons[position].transform.position.x;
+                abilityPicker.position = at;
+            }
+
+            int[] held = { (int)me.AbilitySpace, (int)me.AbilityShift };
+            for (int i = 0; i < slotOrbs.Count; i++)
+                slotOrbs[i].Show(IconOf(held[i]), i < abilityKeyLabels.Length ? abilityKeyLabels[i] : "", openAbilitySlot == i, false);
+
+            abilityOptionRoot.gameObject.SetActive(openAbilitySlot >= 0);
+            if (openAbilitySlot < 0) return;
+            for (int option = 0; option < optionOrbs.Count; option++)
+                optionOrbs[option].Show(IconOf(option), NameOf(option),
+                    held[openAbilitySlot] == option, held[1 - openAbilitySlot] == option);
+        }
+
+        static Sprite IconOf(int ability) => MPAbilities.Get(ability)?.Icon;
+        static string NameOf(int ability) => MPAbilities.Get(ability)?.DisplayName ?? "";
+
+        // Takes an ability for the open slot (the host swaps it if the other slot has it).
+        void ChooseAbility(int ability)
+        {
+            if (MPLobby.Instance != null && openAbilitySlot >= 0) MPLobby.Instance.SetAbilityRpc(openAbilitySlot, (MPAbility)ability);
+            openAbilitySlot = -1;
         }
 
         void ToggleZombies()

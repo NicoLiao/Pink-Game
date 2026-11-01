@@ -12,17 +12,28 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ab5c3dd82213ead49b7bbafe3ae4d483, type: 3}
   m_Name: DefaultGun
   m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPWeapon
-  displayName: Love Gun
-  icon: {fileID: 21300000, guid: a7b8c9d0e1f24a3b8c5d6e7f8091a2b3, type: 3}
+  displayName: Love Bow
+  icon: {fileID: 21300000, guid: b9c0d1e2f3a44b5c8d6e7f8091a2b3c4, type: 3}
   duration: 30
-  fireCooldown: 0.25
-  pellets: 1
-  spreadAngle: 0
+  chargeTime: 1.2
+  recovery: 0.15
+  minCharge: 0.3
+  tapSpeed: 0.5
+  tapPower: 0.15
   style: 0
   projectileSpeed: 18
-  power: 20
-  lifetime: 1.3333334
+  power: 100
+  lifetime: 1.4
   projectileScale: 1
-  bounces: 0
+  chargeTimeMultiplier: 1
+  speedMultiplier: 1
+  powerMultiplier: 1
+  lifetimeMultiplier: 1
+  scaleMultiplier: 1
+  extraPellets: 0
+  spreadAngle: 0
+  extraBounces: 0
   explosionRadius: 0
   explosionEdgePower: 0.35
+  changeStyle: 0
+  styleOverride: 1

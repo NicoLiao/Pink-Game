@@ -110,6 +110,7 @@ MonoBehaviour:
   npcClearance: 0.8
   playerSpawnClearance: 4
   projectilePrefab: {fileID: 6142666205517943309, guid: 4b1d7940c89ea8d468a48625d47998fb, type: 3}
+  npcProjectilePrefab: {fileID: 6142666205517943309, guid: 5c7e9a1b3d4f4620c8e0f2a4b6d81c93, type: 3}
   burstPrefab: {fileID: 8599745726365794670, guid: 46d544cdbcf16954fb1b362b6e23baad, type: 3}
   ringPrefab: {fileID: 1266542721413796787, guid: 9243a3c2ed8067f4fb524e8f045e3d41, type: 3}
   explosionShake: 0.25
@@ -118,6 +119,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: dc8a57ca89f35ae4ebffcc50da72a627, type: 2}
   - {fileID: 11400000, guid: 0a153d5c3b4cf6b408b07fde8324c2c3, type: 2}
   - {fileID: 11400000, guid: 754cb0b2bfa32604aa41f7d77186966f, type: 2}
+  - {fileID: 11400000, guid: 2c4e6a8b0d1f4357a9b1c3d5e7f90a12, type: 2}
   endWhenOneTeamLeft: 1
   scoreInterval: 0.2
 --- !u!114 &7367794585134972551
@@ -138,6 +140,7 @@ MonoBehaviour:
   - 1
   - 1
   - 0.7
+  - 1
   firstSpawnDelay: 5
   spawnInterval: 9
   maxActive: 3

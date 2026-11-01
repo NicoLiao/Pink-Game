@@ -33,9 +33,16 @@ namespace LoveShot.Multiplayer
 
             active.RemoveAll(pickup => pickup == null || !pickup.IsSpawned);
             if (active.Count >= maxActive || pickupPrefab == null) return;
-            int weapon = PickWeapon();
-            if (weapon <= 0 || !TryFindSpot(out Vector2 position)) return;
+            if (!TryFindSpot(out Vector2 position)) return;
+            ServerSpawnAt(position);
+        }
 
+        // Host only: drops a random modifier pickup right here (the player ability), ignoring the cap.
+        public void ServerSpawnAt(Vector2 position)
+        {
+            NetworkManager network = NetworkManager.Singleton;
+            int weapon = PickWeapon();
+            if (network == null || !network.IsServer || pickupPrefab == null || weapon <= 0) return;
             NetworkObject pickup = Instantiate(pickupPrefab, position, Quaternion.identity);
             pickup.GetComponent<MPWeaponPickup>().Init(weapon, network.ServerTime.Time + pickupLifetime);
             pickup.Spawn(destroyWithScene: true);

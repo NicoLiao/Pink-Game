@@ -221,8 +221,8 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
+  m_LocalScale: {x: 2, y: 2, z: 2}
+  m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 5779247360181053926}
   - {fileID: 446354302996956040}
@@ -243,7 +243,7 @@ Rigidbody2D:
   m_Simulated: 1
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0
-  m_Mass: 1
+  m_Mass: 5
   m_LinearDamping: 0
   m_AngularDamping: 0.05
   m_GravityScale: 0
@@ -306,14 +306,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2235211336
+  GlobalObjectIdHash: 2078820780
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
   Ownership: 1
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
-  m_InScenePlaced: 1
+  m_InScenePlaced: 0
   ActiveSceneSynchronization: 0
   SceneMigrationSynchronization: 0
   SpawnWithObservers: 1
@@ -414,10 +414,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPCapture
   ShowTopMostFoldoutHeaderGroup: 1
-  captureAmount: 100
-  stealAmount: 200
-  sensitivity: 0.4
-  ownTeamHeals: 1
+  captureAmount: 1000
+  stealAmount: 500
+  sensitivity: 1
+  ownTeamHeals: 0
   recoveryDelay: 0
   recoveryRate: 0
 --- !u!114 &400228459324860271
@@ -461,13 +461,14 @@ MonoBehaviour:
   catchUpMultiplier: 1.35
   separationRadius: 1.1
   separationStrength: 1.5
-  attackRange: 6
+  attackRange: 9
   retargetInterval: 0.4
   enemyTargetPriority: 0.7
-  fireCooldown: 0.9
+  fireCooldown: 0.1
   projectileSpeed: 15
   projectileLifetime: 1.3333334
-  shotPower: 10
+  projectileScale: 1
+  shotPower: 8
   spawnOffset: 0.575
   obstacleMask:
     serializedVersion: 2

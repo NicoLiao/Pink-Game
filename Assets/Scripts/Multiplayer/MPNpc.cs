@@ -46,6 +46,8 @@ namespace LoveShot.Multiplayer
         [SerializeField, Min(0f)] protected float projectileSpeed = 15f;
         [Tooltip("Seconds a shot flies before fading (range = speed x lifetime).")]
         [SerializeField, Min(0.05f)] float projectileLifetime = 1.33f;
+        [Tooltip("Size of this NPC's shots, a multiple of the projectile prefab's size.")]
+        [SerializeField, Min(0.1f)] float projectileScale = 1f;
         [Tooltip("Love per shot (players' default shots are 20).")]
         [SerializeField, Min(0f)] protected float shotPower = 10f;
         [SerializeField, Min(0f)] protected float spawnOffset = 0.5f;
@@ -58,6 +60,8 @@ namespace LoveShot.Multiplayer
 
         readonly NetworkVariable<NpcType> npcType = new(NpcType.Basic);
         readonly NetworkVariable<NpcBehavior> behavior = new(NpcBehavior.Wander);
+        // Body size multiplier (a duplicated NPC is smaller), shown on every machine.
+        readonly NetworkVariable<float> size = new(1f);
 
         public Mover Mover { get; private set; }
         public MPCapture Capture { get; private set; }
@@ -66,6 +70,19 @@ namespace LoveShot.Multiplayer
         public NpcType Type => npcType.Value;
         public NpcBehavior Behavior => behavior.Value;
         public int ScoreValue => scoreValue;
+        public NpcType DefinedType => type;
+        public float Size => size.Value;
+        public bool IsShrunk => size.Value < 0.999f;
+        // What Duplicate may copy: every type except the Celebrity.
+        public bool CanDuplicate => type != NpcType.Celebrity;
+
+        // Host only: a duplicated NPC is smaller and takes `healthMultiplier` times the love per hit.
+        public void ServerShrink(float newSize, float healthMultiplier)
+        {
+            if (!IsServer) return;
+            size.Value = newSize;
+            Capture.ServerSetHealthMultiplier(healthMultiplier);
+        }
 
         protected MPCapture target;
         float nextRetargetTime;
@@ -176,7 +193,7 @@ namespace LoveShot.Multiplayer
             nextRetargetTime = Time.time + retargetInterval;
         }
 
-        protected virtual MPShot Shot => new(ProjectileStyle.Heart, projectileSpeed, shotPower, projectileLifetime);
+        protected virtual MPShot Shot => new(ProjectileStyle.Icon, projectileSpeed, shotPower, projectileLifetime, projectileScale);
 
         protected virtual void Fire(Vector2 direction)
         {

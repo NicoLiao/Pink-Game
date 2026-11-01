@@ -24,17 +24,18 @@ namespace LoveShot.Multiplayer
     {
         [Header("Shooting (weapon stats come from the MPWeapon assets on MPMatch)")]
         [SerializeField, Min(0f)] float spawnOffset = 0.6f;
-        [SerializeField] bool holdToFire = true;
-        [Tooltip("Host: a shot may arrive this fraction of the cooldown early (network jitter bunches messages).")]
+        [Tooltip("Host: a shot may arrive this fraction of its charge time early (network jitter bunches messages).")]
         [SerializeField, Range(0f, 0.9f)] float fireTimingGrace = 0.4f;
         [Tooltip("Host: the owner's muzzle position is trusted within this distance of where the host sees the player.")]
         [SerializeField, Min(0f)] float maxOriginError = 3.5f;
 
         [Header("Dash")]
-        [Tooltip("Seconds between dashes. Enforced by the host.")]
-        [SerializeField, Min(0f)] float dashCooldown = 20f;
         [Tooltip("Host: seconds of clock error tolerated when checking the dash cooldown.")]
         [SerializeField, Min(0f)] float dashGrace = 0.3f;
+
+        [Header("Abilities (numbers and icons are the MPAbilityDef assets in Assets/Settings/Resources/Abilities)")]
+        [Tooltip("Ring shown around a player using an ability.")]
+        [SerializeField] HeartRing abilityRingPrefab;
 
         [Header("Lovestruck (hit by an enemy player)")]
         [SerializeField, Min(0f)] float struckDuration = 0.6f;
@@ -77,13 +78,15 @@ namespace LoveShot.Multiplayer
         readonly NetworkVariable<int> slot = new(MPTeams.Neutral);
         readonly NetworkVariable<Vector2> aim = new(Vector2.up, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
         readonly NetworkVariable<double> dashReadyTime = new(0d);
+        // The two abilities (set at spawn), when each cooldown ability is ready again, and whether Duplicate was spent.
+        readonly NetworkVariable<MPAbilityState> abilities = new(new MPAbilityState { Ability1 = MPAbility.Heal });
         readonly NetworkVariable<double> struckUntil = new(0d);
         readonly NetworkVariable<double> conversionImmuneUntil = new(0d);
         // Slot of the player who converted this one (a zombie walks beside them).
         readonly NetworkVariable<int> followSlot = new(MPTeams.Neutral);
-        // Index into MPMatch weapons (0 = Default Gun) and when a picked-up weapon runs out.
-        readonly NetworkVariable<byte> weapon = new(0);
-        readonly NetworkVariable<double> weaponExpireTime = new(0d);
+        // Timed modifiers stacked on the bow (MPMatch weapon index + when each runs out); the host adds and removes them.
+        readonly NetworkList<MPModifier> modifiers = new();
+        readonly List<MPWeapon> activeModifiers = new();
 
         Mover mover;
         Rigidbody2D body;
@@ -96,11 +99,14 @@ namespace LoveShot.Multiplayer
         Vector2 lastMoveDirection = Vector2.right;
         float speedBoost = 1f;
         float nextFireTime;
+        bool charging;
+        float chargeStart;
         ushort shotSequence;
         float predictedDashReady;
+        readonly float[] predictedAbilityReady = new float[2];
 
         // Host-side.
-        float serverNextFireTime;
+        float serverNextShotTime;
         double immuneUntil;
         float moveBudget;
         Vector2 lastCheckedPosition;
@@ -138,14 +144,33 @@ namespace LoveShot.Multiplayer
         public MPCapture Capture => capture;
         public bool IsConversionImmune => Now < conversionImmuneUntil.Value;
         public float ConversionImmunityRemaining => Mathf.Max(0f, (float)(conversionImmuneUntil.Value - Now));
-        public int WeaponIndex => weapon.Value;
-        public MPWeapon Weapon => MPMatch.Instance != null ? MPMatch.Instance.WeaponAt(weapon.Value) : null;
-        // Seconds left on a picked-up weapon (0 for the Default Gun).
-        public float WeaponRemaining => weapon.Value == 0 ? 0f : Mathf.Max(0f, (float)(weaponExpireTime.Value - Now));
+        // The bow every player holds (MPMatch weapon 0).
+        public MPWeapon Bow => MPMatch.Instance != null ? MPMatch.Instance.WeaponAt(0) : null;
+        public int ModifierCount => modifiers.Count;
+        public MPWeapon ModifierAt(int i) => MPMatch.Instance != null ? MPMatch.Instance.WeaponAt(modifiers[i].Index) : null;
+        public float ModifierRemaining(int i) => Mathf.Max(0f, (float)(modifiers[i].Expire - Now));
+        // Seconds of holding fire for a full charge with the current modifiers.
+        public float FullChargeTime => Bow != null ? Firing(1f).ChargeTime : 1f;
+        // 0..1 while the owner holds fire, else 0.
+        public float ChargeFraction => charging ? Mathf.Clamp01((Time.time - chargeStart) / FullChargeTime) : 0f;
+        public bool IsCharging => charging;
+        // The charge below which releasing fires nothing.
+        public float MinCharge => Bow != null ? Bow.MinCharge : 0f;
         public Vector2 Position => transform.position;
         // Meaningful on the host (NPC following): the real velocity for its own player, a measured one for remote players.
         public Vector2 Velocity => IsOwner ? mover.Velocity : observedVelocity;
-        public float DashCooldown => dashCooldown;
+        // Ability slot 0 is Space, slot 1 is Shift.
+        public MPAbility AbilityOf(int abilitySlot) => abilitySlot == 0 ? abilities.Value.Ability0 : abilities.Value.Ability1;
+        public bool AbilityUsedUp(int abilitySlot) => (abilities.Value.UsedMask & (1 << abilitySlot)) != 0;
+        public float AbilityCooldown(int abilitySlot) => Def(AbilityOf(abilitySlot)).Cooldown;
+        public float AbilityCooldownRemaining(int abilitySlot)
+        {
+            if (AbilityOf(abilitySlot) == MPAbility.Dash) return DashCooldownRemaining;
+            double ready = abilitySlot == 0 ? abilities.Value.Ready0 : abilities.Value.Ready1;
+            return Mathf.Max((float)(ready - Now), IsOwner ? predictedAbilityReady[abilitySlot] - Time.time : 0f, 0f);
+        }
+        public float DashCooldown => Def(MPAbility.Dash).Cooldown;
+        static MPAbilityDef Def(MPAbility kind) => MPAbilities.Get(kind);
         // The owner counts down from its own dash at once, without waiting for the host's confirmation.
         public float DashCooldownRemaining => Mathf.Max((float)(dashReadyTime.Value - Now), IsOwner ? predictedDashReady - Time.time : 0f, 0f);
         public bool IsStruck => Now < struckUntil.Value;
@@ -157,7 +182,7 @@ namespace LoveShot.Multiplayer
         public event Action Struck;
         // (previous team, new team), raised on every machine when this player is converted.
         public event Action<int, int> Converted;
-        // Weapon index, raised on every machine when this player picks up a weapon.
+        // Weapon index, raised on every machine when this player picks up a modifier.
         public event Action<int> Equipped;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -186,6 +211,9 @@ namespace LoveShot.Multiplayer
             networkTransform = GetComponent<NetworkTransform>();
             skills = GetComponents<Skill>();
         }
+
+        // Host, before spawning: the abilities chosen in the lobby.
+        public void InitAbilities(MPAbility space, MPAbility shift) => abilities.Value = new MPAbilityState { Ability0 = space, Ability1 = shift };
 
         // Host, before spawning: the permanent slot (identity) and the team the lobby assigned it.
         public void InitSlot(int playerSlot, int startTeam)
@@ -273,7 +301,7 @@ namespace LoveShot.Multiplayer
                     Vector2 mouseWorld = aimCamera.ScreenToWorldPoint(mouse.position.ReadValue());
                     Vector2 toMouse = mouseWorld - (Vector2)transform.position;
                     if (toMouse.sqrMagnitude > 0.0001f) aimDirection = toMouse.normalized;
-                    fire = holdToFire ? mouse.leftButton.isPressed : mouse.leftButton.wasPressedThisFrame;
+                    fire = mouse.leftButton.isPressed;
                 }
 
                 // Skills go where you're moving; if standing still, in the last direction you moved.
@@ -321,19 +349,54 @@ namespace LoveShot.Multiplayer
                 if (Vector2.Angle(aim.Value, aimDirection) > aimSyncAngle) aim.Value = aimDirection;
             }
             if (aimIndicator != null) aimIndicator.Point(aimDirection);
-            if (live && fire && !struck) TryFire(aimDirection);
+            if (live && !struck && !IsZombie) UpdateCharge(fire, aimDirection);
+            else charging = false;
         }
 
-        void TryFire(Vector2 direction)
+        // Holding fire charges the bow; releasing shoots (a release before the minimum charge cancels).
+        void UpdateCharge(bool fire, Vector2 direction)
         {
-            MPWeapon current = Weapon;
-            if (current == null || Time.time < nextFireTime || direction.sqrMagnitude < 0.0001f) return;
-            nextFireTime = Time.time + current.FireCooldown;
+            if (Bow == null)
+            {
+                charging = false;
+                return;
+            }
+            if (fire)
+            {
+                if (!charging)
+                {
+                    charging = true;
+                    chargeStart = Mathf.Max(Time.time, nextFireTime);
+                }
+                return;
+            }
+            if (!charging) return;
+            float charge = ChargeFraction;
+            charging = false;
+            if (charge >= Bow.MinCharge) TryFire(direction, charge);
+        }
+
+        void TryFire(Vector2 direction, float charge)
+        {
+            MPWeapon bow = Bow;
+            if (bow == null || Time.time < nextFireTime || direction.sqrMagnitude < 0.0001f) return;
+            byte sentCharge = (byte)Mathf.RoundToInt(Mathf.Clamp01(charge) * 255f);
+            MPFiring firing = Firing(sentCharge / 255f);
+            nextFireTime = Time.time + bow.Recovery;
             Vector2 origin = (Vector2)transform.position + direction * spawnOffset;
             if (++shotSequence == 0) shotSequence = 1;
             // A client shows its shot right away; the host's projectiles take over these copies when they arrive.
-            if (!IsServer && MPMatch.Instance != null) MPMatch.Instance.PredictWeapon(current, Team, Slot, origin, direction, NetworkObjectId, shotSequence);
-            ShootRpc(origin, direction, shotSequence);
+            if (!IsServer && MPMatch.Instance != null) MPMatch.Instance.PredictWeapon(firing, Team, Slot, origin, direction, NetworkObjectId, shotSequence);
+            ShootRpc(origin, direction, shotSequence, sentCharge);
+        }
+
+        // The bow with every running modifier stacked on it, at `charge` (0..1).
+        MPFiring Firing(float charge)
+        {
+            activeModifiers.Clear();
+            for (int i = 0; i < modifiers.Count; i++)
+                if (Now < modifiers[i].Expire) activeModifiers.Add(MPMatch.Instance.WeaponAt(modifiers[i].Index));
+            return MPWeapon.Resolve(Bow, activeModifiers, charge);
         }
 
         // Owner: dashes at once. The host checks the cooldown and shows the dash to everyone else.
@@ -342,9 +405,21 @@ namespace LoveShot.Multiplayer
             if (!IsOwner || IsZombie || !MPMatch.InProgress || direction.sqrMagnitude < 0.0001f || DashCooldownRemaining > 0f) return false;
             direction.Normalize();
             if (!mover.TryDash(direction)) return false;
-            predictedDashReady = Time.time + dashCooldown;
+            predictedDashReady = Time.time + DashCooldown;
             Dashed?.Invoke(direction);
             RequestDashRpc(direction);
+            return true;
+        }
+
+        // Owner: uses the ability in a slot (Dash happens at once; the others are decided by the host).
+        public bool TryUseAbility(int abilitySlot, Vector2 direction)
+        {
+            MPAbility current = AbilityOf(abilitySlot);
+            if (current == MPAbility.Dash) return TryDash(direction);
+            if (!IsOwner || IsZombie || !MPMatch.InProgress || AbilityUsedUp(abilitySlot) || AbilityCooldownRemaining(abilitySlot) > 0f) return false;
+            // Shows the cooldown at once; Duplicate is only guarded briefly (it may do nothing if you have no followers).
+            predictedAbilityReady[abilitySlot] = Time.time + (Def(current).OncePerMatch ? 0.5f : AbilityCooldown(abilitySlot));
+            UseAbilityRpc((byte)abilitySlot);
             return true;
         }
 
@@ -368,35 +443,108 @@ namespace LoveShot.Multiplayer
         float MaxBudget => mover.MoveSpeed * speedTolerance * burstSeconds;
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
-        void ShootRpc(Vector2 origin, Vector2 direction, ushort sequence)
+        void ShootRpc(Vector2 origin, Vector2 direction, ushort sequence, byte chargeByte)
         {
-            MPWeapon current = Weapon;
-            bool accepted = MPMatch.InProgress && !IsStruck && current != null && direction.sqrMagnitude > 0.0001f
-                && Time.time >= serverNextFireTime - current.FireCooldown * fireTimingGrace;
+            MPWeapon bow = Bow;
+            float charge = chargeByte / 255f;
+            bool accepted = MPMatch.InProgress && !IsStruck && bow != null && direction.sqrMagnitude > 0.0001f && charge >= bow.MinCharge * (1f - fireTimingGrace);
+            MPFiring firing = default;
+            float needed = 0f;
+            if (accepted)
+            {
+                // The charge took real time: the host never sees it held, so it checks that long enough has passed.
+                firing = Firing(charge);
+                needed = bow.Recovery + firing.ChargeTime * charge;
+                accepted = Time.time >= serverNextShotTime - needed * fireTimingGrace;
+            }
             if (!accepted)
             {
                 if (!IsOwnedByServer) RejectShotRpc(sequence);
                 return;
             }
-            // Bunched messages may come a little early, but the long-run rate never beats the cooldown.
-            serverNextFireTime = Mathf.Max(Time.time, serverNextFireTime) + current.FireCooldown;
+            // Bunched messages may come a little early, but the long-run rate never beats the charge time.
+            serverNextShotTime = Mathf.Max(Time.time, serverNextShotTime) + needed;
             direction.Normalize();
             // The owner is ahead of the host's view of it, so its muzzle position is used if it's plausible.
             Vector2 expected = (Vector2)transform.position + direction * spawnOffset;
             if (Vector2.Distance(origin, expected) > maxOriginError) origin = expected;
-            MPMatch.Instance.FireWeapon(current, Team, Slot, origin, direction, NetworkObjectId, IsOwnedByServer ? (ushort)0 : sequence);
+            MPMatch.Instance.FireWeapon(firing, Team, Slot, origin, direction, NetworkObjectId, IsOwnedByServer ? (ushort)0 : sequence);
 
-            // Zombies following this player attack with them: same weapon, same direction, from their own position.
+            // Zombies following this player attack with them: same shot, same direction, from their own position.
             foreach (MPPlayer zombie in all)
                 if (zombie != this && zombie.IsZombie && !zombie.IsStruck && zombie.FollowTarget == this)
-                    zombie.ServerMirrorShot(current, direction);
+                    zombie.ServerMirrorShot(firing, direction);
         }
 
-        // Host: fires `weapon` in `direction` from this zombie, because the player it follows just fired.
-        void ServerMirrorShot(MPWeapon weapon, Vector2 direction)
+        // Host: fires `firing` in `direction` from this zombie, because the player it follows just fired.
+        void ServerMirrorShot(MPFiring firing, Vector2 direction)
         {
             Vector2 origin = (Vector2)transform.position + direction * spawnOffset;
-            MPMatch.Instance.FireWeapon(weapon, Team, Slot, origin, direction, NetworkObjectId);
+            MPMatch.Instance.FireWeapon(firing, Team, Slot, origin, direction, NetworkObjectId);
+        }
+
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
+        void UseAbilityRpc(byte abilitySlot)
+        {
+            if (abilitySlot > 1) return;
+            MPAbility current = AbilityOf(abilitySlot);
+            MPAbilityState state = abilities.Value;
+            double ready = abilitySlot == 0 ? state.Ready0 : state.Ready1;
+            if (current == MPAbility.Dash || !MPMatch.InProgress || IsZombie || AbilityUsedUp(abilitySlot) || Now < ready - dashGrace) return;
+            switch (current)
+            {
+                case MPAbility.Heal:
+                    ServerHeal();
+                    break;
+                case MPAbility.Powerup:
+                    ServerSpawnPowerup();
+                    break;
+                case MPAbility.Duplicate:
+                    if (!ServerDuplicate()) return;
+                    break;
+            }
+            if (Def(current).OncePerMatch) state.UsedMask |= (byte)(1 << abilitySlot);
+            if (abilitySlot == 0) state.Ready0 = Now + AbilityCooldown(abilitySlot);
+            else state.Ready1 = Now + AbilityCooldown(abilitySlot);
+            abilities.Value = state;
+            AbilityUsedRpc(Def(current).Radius);
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
+        void AbilityUsedRpc(float radius) => HeartRing.Play(abilityRingPrefab, transform.position, MPTeams.ColorOf(Team), radius, 18);
+
+        // Host: everything on this team in range gets its loyalty back.
+        void ServerHeal()
+        {
+            foreach (MPCapture member in MPCapture.All)
+                if (member.Owner == Team && Vector2.Distance(member.transform.position, transform.position) <= Def(MPAbility.Heal).Radius) member.ServerHeal();
+        }
+
+        // Host: a random modifier pickup appears in front of the player.
+        void ServerSpawnPowerup()
+        {
+            Vector2 spot = (Vector2)transform.position + AimDirection * Def(MPAbility.Powerup).Distance;
+            if (Physics2D.OverlapCircle(spot, 0.5f, obstacleMask) != null) spot = transform.position;
+            if (MPMatch.Instance != null && MPMatch.Instance.Pickups != null) MPMatch.Instance.Pickups.ServerSpawnAt(spot);
+        }
+
+        // Host: copies every follower (except the Celebrity) that hasn't been duplicated yet; originals and copies shrink and get weaker.
+        bool ServerDuplicate()
+        {
+            var followers = new List<MPNpc>();
+            foreach (MPNpc npc in MPNpc.All)
+                if (npc.CanDuplicate && !npc.IsShrunk && npc.PersonalOwner == Slot && npc.Team == Team) followers.Add(npc);
+            if (followers.Count == 0) return false;
+            MPAbilityDef duplicate = Def(MPAbility.Duplicate);
+            foreach (MPNpc npc in followers)
+            {
+                Vector2 spot = (Vector2)npc.transform.position + UnityEngine.Random.insideUnitCircle.normalized * duplicate.Spread;
+                if (Physics2D.OverlapCircle(spot, 0.4f, obstacleMask) != null) spot = npc.transform.position;
+                MPNpc copy = MPMatch.Instance.ServerSpawnNpcLike(npc, spot, Team, Slot);
+                npc.ServerShrink(duplicate.Size, duplicate.HealthMultiplier);
+                if (copy != null) copy.ServerShrink(duplicate.Size, duplicate.HealthMultiplier);
+            }
+            return true;
         }
 
         // The host is the only judge of the cooldown; a dash it doesn't grant gets no movement allowance.
@@ -404,7 +552,7 @@ namespace LoveShot.Multiplayer
         void RequestDashRpc(Vector2 direction)
         {
             if (!MPMatch.InProgress || direction.sqrMagnitude < 0.0001f || Now < dashReadyTime.Value - dashGrace) return;
-            dashReadyTime.Value = Now + dashCooldown;
+            dashReadyTime.Value = Now + DashCooldown;
             moveBudget += mover.DashDistance;
             DashedRpc(direction.normalized);
         }
@@ -414,7 +562,8 @@ namespace LoveShot.Multiplayer
 
         void Simulate()
         {
-            if (weapon.Value != 0 && Now >= weaponExpireTime.Value) weapon.Value = 0;
+            for (int i = modifiers.Count - 1; i >= 0; i--)
+                if (Now >= modifiers[i].Expire) modifiers.RemoveAt(i);
             if (!IsOwner) CheckMovement();
         }
 
@@ -450,24 +599,25 @@ namespace LoveShot.Multiplayer
             CorrectPositionRpc(lastValidPosition);
         }
 
-        // Host: equips a picked-up weapon. Another pickup replaces it and restarts the timer.
+        // Host: adds a picked-up modifier to the stack. Picking up one already held restarts its timer.
         public void ServerEquip(int weaponIndex)
         {
             MPWeapon picked = MPMatch.Instance != null ? MPMatch.Instance.WeaponAt(weaponIndex) : null;
-            if (!IsServer || picked == null) return;
-            weaponExpireTime.Value = Now + picked.Duration;
-            weapon.Value = (byte)weaponIndex;
-            // Fire right away with the new weapon instead of waiting out the old one's cooldown.
-            serverNextFireTime = Mathf.Min(serverNextFireTime, Time.time + 0.1f);
+            if (!IsServer || picked == null || weaponIndex <= 0) return;
+            var modifier = new MPModifier { Index = (byte)weaponIndex, Expire = Now + picked.Duration };
+            bool refreshed = false;
+            for (int i = 0; i < modifiers.Count; i++)
+                if (modifiers[i].Index == weaponIndex)
+                {
+                    modifiers[i] = modifier;
+                    refreshed = true;
+                }
+            if (!refreshed) modifiers.Add(modifier);
             EquippedRpc(weaponIndex);
         }
 
         [Rpc(SendTo.ClientsAndHost)]
-        void EquippedRpc(int weaponIndex)
-        {
-            if (IsOwner) nextFireTime = Mathf.Min(nextFireTime, Time.time + 0.1f);
-            Equipped?.Invoke(weaponIndex);
-        }
+        void EquippedRpc(int weaponIndex) => Equipped?.Invoke(weaponIndex);
 
         // Host: an enemy player's shot slows this player briefly, then it is immune for a moment.
         public bool TryStrike()

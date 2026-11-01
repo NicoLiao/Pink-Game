@@ -108,7 +108,7 @@ namespace LoveShot.Multiplayer
 
             float t = (Time.time - popStartTime) / popDuration;
             float pop = t < 1f ? Mathf.Sin(t * Mathf.PI) * (popScale - 1f) : 0f;
-            body.transform.localScale = Vector3.Scale(bodyBaseScale * (1f + pop), ExtraScale);
+            body.transform.localScale = Vector3.Scale(bodyBaseScale * (1f + pop), ExtraScale) * (npc != null ? npc.Size : 1f);
         }
     }
 }

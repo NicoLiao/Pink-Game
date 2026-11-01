@@ -12,6 +12,9 @@ namespace LoveShot.Multiplayer
         [SerializeField] RectTransform iconsRoot;
         [SerializeField] UnityEngine.UI.Image[] originalIcons;
         [SerializeField] UnityEngine.UI.Image[] zombieIcons;
+        [Tooltip("The player name under each icon (children of the icons, same order).")]
+        [SerializeField] TMP_Text[] originalNames;
+        [SerializeField] TMP_Text[] zombieNames;
         [Tooltip("The bar between ORIGINAL and ZOMBIES; shown only when the team has zombies.")]
         [SerializeField] GameObject divider;
         [SerializeField] TMP_Text scoreText;
@@ -26,6 +29,7 @@ namespace LoveShot.Multiplayer
             {
                 bool original = StartTeamOf(member.Slot) == team;
                 UnityEngine.UI.Image[] pool = original ? originalIcons : zombieIcons;
+                TMP_Text[] nameTexts = original ? originalNames : zombieNames;
                 int index = original ? originals++ : zombies++;
                 if (index >= pool.Length) continue;
                 UnityEngine.UI.Image icon = pool[index];
@@ -33,6 +37,11 @@ namespace LoveShot.Multiplayer
                 icon.color = MPTeams.ColorOf(member.Slot);
                 Sprite symbol = teamStyle != null ? teamStyle.SymbolOf(member.Slot) : null;
                 if (symbol != null) icon.sprite = symbol;
+                if (nameTexts != null && index < nameTexts.Length && nameTexts[index] != null)
+                {
+                    nameTexts[index].text = member.DisplayName;
+                    nameTexts[index].color = MPTeams.TextColorOf(member.Slot);
+                }
                 if (member == MPPlayer.Local) local = icon;
             }
             HideFrom(originalIcons, originals);

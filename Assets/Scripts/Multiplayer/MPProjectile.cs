@@ -13,10 +13,19 @@ namespace LoveShot.Multiplayer
     public class MPProjectile : MonoBehaviour
     {
         [SerializeField] SpriteRenderer sprite;
-        [Tooltip("Sprite per ProjectileStyle (Heart, Rocket, Arrow).")]
+        [Tooltip("Sprite per ProjectileStyle (Heart = the plain arrow shaft, Rocket, Arrow = Cupid's arrow; Icon uses the shooter's symbol).")]
         [SerializeField] Sprite[] styleSprites;
-        [Tooltip("Heart-style shots take their team's symbol shape.")]
+        [Tooltip("Shooter's symbol sprites.")]
         [SerializeField] TeamStyle teamStyle;
+        [Tooltip("Child sprite showing the shooter's symbol: the head of a bow arrow, or the badge on a rocket.")]
+        [SerializeField] SpriteRenderer emblem;
+        [Tooltip("Where the emblem sits on the arrow (the tip) and how big it is, in the projectile's own units.")]
+        [SerializeField] Vector2 arrowEmblemOffset = new Vector2(0.45f, 0f);
+        [SerializeField, Min(0.05f)] float arrowEmblemSize = 0.8f;
+        [SerializeField] Vector2 rocketEmblemOffset = new Vector2(-0.05f, 0f);
+        [SerializeField, Min(0.05f)] float rocketEmblemSize = 0.6f;
+        [Tooltip("The badge on a rocket stays this color (the rocket itself takes the team color).")]
+        [SerializeField] Color rocketEmblemColor = Color.white;
         [SerializeField] LayerMask wallMask;
         [SerializeField] HeartBurst trailPrefab;
         [SerializeField, Min(0.01f)] float trailInterval = 0.05f;
@@ -65,12 +74,30 @@ namespace LoveShot.Multiplayer
                 sprite.color = MPTeams.ColorOf(team);
                 int style = (int)shot.Style;
                 if (styleSprites != null && style < styleSprites.Length && styleSprites[style] != null) sprite.sprite = styleSprites[style];
-                // Heart-style shots wear the shooter's own symbol (identity); the color follows their current team.
-                Sprite symbol = shot.Style == ProjectileStyle.Heart && teamStyle != null ? teamStyle.SymbolOf(creditSlot) : null;
+                // Icon shots are just the shooter's own symbol (the prefab's default heart if it has none).
+                Sprite symbol = shot.Style == ProjectileStyle.Icon && teamStyle != null ? teamStyle.SymbolOf(creditSlot) : null;
                 if (symbol != null) sprite.sprite = symbol;
             }
+            ShowEmblem();
             FaceVelocity();
             KickShooter();
+        }
+
+        // Arrows and rockets carry the shooter's own symbol (identity); an arrow's tip takes the team color.
+        void ShowEmblem()
+        {
+            if (emblem == null) return;
+            bool carries = shot.Style == ProjectileStyle.Heart || shot.Style == ProjectileStyle.Rocket;
+            Sprite symbol = carries && teamStyle != null ? teamStyle.SymbolOf(creditSlot) : null;
+            emblem.gameObject.SetActive(symbol != null);
+            if (symbol == null) return;
+            bool rocket = shot.Style == ProjectileStyle.Rocket;
+            Vector3 size = symbol.bounds.size;
+            float fit = (rocket ? rocketEmblemSize : arrowEmblemSize) / Mathf.Max(size.x, size.y, 0.0001f);
+            emblem.sprite = symbol;
+            emblem.color = rocket ? rocketEmblemColor : MPTeams.ColorOf(team);
+            emblem.transform.localPosition = rocket ? rocketEmblemOffset : arrowEmblemOffset;
+            emblem.transform.localScale = Vector3.one * fit;
         }
 
         // The shooter recoils on every machine that shows this shot.
@@ -130,7 +157,7 @@ namespace LoveShot.Multiplayer
 
         void FaceVelocity()
         {
-            if (shot.Style == ProjectileStyle.Heart || body.linearVelocity.sqrMagnitude < 0.0001f) return;
+            if (shot.Style == ProjectileStyle.Icon || body.linearVelocity.sqrMagnitude < 0.0001f) return;
             float angle = Mathf.Atan2(body.linearVelocity.y, body.linearVelocity.x) * Mathf.Rad2Deg;
             transform.rotation = Quaternion.Euler(0f, 0f, angle);
         }

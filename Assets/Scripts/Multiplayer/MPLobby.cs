@@ -6,21 +6,28 @@ using UnityEngine.SceneManagement;
 
 namespace LoveShot.Multiplayer
 {
+    // An ability a player takes into the match (two slots, Space and Shift, chosen in the lobby; the two differ).
+    public enum MPAbility : byte { Dash, Heal, Powerup, Duplicate }
+
     // One connected player as the lobby knows them. Slot is also the player's team and color.
     public struct MPPlayerInfo : INetworkSerializable, IEquatable<MPPlayerInfo>
     {
         public ulong ClientId;
         public int Slot;
         public FixedString32Bytes Name;
+        public MPAbility AbilitySpace;
+        public MPAbility AbilityShift;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
             serializer.SerializeValue(ref ClientId);
             serializer.SerializeValue(ref Slot);
             serializer.SerializeValue(ref Name);
+            serializer.SerializeValue(ref AbilitySpace);
+            serializer.SerializeValue(ref AbilityShift);
         }
 
-        public bool Equals(MPPlayerInfo other) => ClientId == other.ClientId && Slot == other.Slot && Name.Equals(other.Name);
+        public bool Equals(MPPlayerInfo other) => ClientId == other.ClientId && Slot == other.Slot && Name.Equals(other.Name) && AbilitySpace == other.AbilitySpace && AbilityShift == other.AbilityShift;
     }
 
     // Session-wide networked state, spawned by the host and kept across scene loads: who is connected,
@@ -153,7 +160,8 @@ namespace LoveShot.Multiplayer
                 return;
             }
             string name = submittedNames.TryGetValue(clientId, out string submitted) ? submitted : $"Player {slot + 1}";
-            players.Add(new MPPlayerInfo { ClientId = clientId, Slot = slot, Name = name });
+            name = MakeUnique(name, clientId);
+            players.Add(new MPPlayerInfo { ClientId = clientId, Slot = slot, Name = name, AbilitySpace = MPAbility.Dash, AbilityShift = MPAbility.Heal });
         }
 
         void RemovePlayer(ulong clientId)
@@ -170,6 +178,21 @@ namespace LoveShot.Multiplayer
             return -1;
         }
 
+        // A name someone else already has gets " #2", " #3"... so the first player keeps the plain name.
+        string MakeUnique(string name, ulong clientId)
+        {
+            string candidate = name;
+            for (int n = 2; NameTaken(candidate, clientId); n++) candidate = $"{name} #{n}";
+            return candidate;
+        }
+
+        bool NameTaken(string name, ulong clientId)
+        {
+            foreach (MPPlayerInfo player in players)
+                if (player.ClientId != clientId && string.Equals(player.Name.ToString(), name, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
         [Rpc(SendTo.Server)]
         void SubmitNameRpc(FixedString32Bytes playerName, RpcParams rpcParams = default)
         {
@@ -184,7 +207,32 @@ namespace LoveShot.Multiplayer
             {
                 if (players[i].ClientId != sender) continue;
                 MPPlayerInfo info = players[i];
-                info.Name = clean;
+                info.Name = MakeUnique(clean, sender);
+                players[i] = info;
+            }
+        }
+
+        // Any player picks their own abilities while in the lobby (slot 0 = Space, 1 = Shift). The two always differ.
+        [Rpc(SendTo.Server)]
+        public void SetAbilityRpc(int abilitySlot, MPAbility ability, RpcParams rpcParams = default)
+        {
+            if (phase.Value != LobbyPhase.Lobby || abilitySlot < 0 || abilitySlot > 1 || (int)ability >= Enum.GetValues(typeof(MPAbility)).Length) return;
+            ulong sender = rpcParams.Receive.SenderClientId;
+            for (int i = 0; i < players.Count; i++)
+            {
+                if (players[i].ClientId != sender) continue;
+                MPPlayerInfo info = players[i];
+                // Picking the one the other slot holds swaps the two.
+                if (abilitySlot == 0)
+                {
+                    if (ability == info.AbilityShift) info.AbilityShift = info.AbilitySpace;
+                    info.AbilitySpace = ability;
+                }
+                else
+                {
+                    if (ability == info.AbilitySpace) info.AbilitySpace = info.AbilityShift;
+                    info.AbilityShift = ability;
+                }
                 players[i] = info;
             }
         }

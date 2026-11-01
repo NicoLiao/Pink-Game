@@ -14,15 +14,26 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPWeapon
   displayName: Shotgun
   icon: {fileID: 21300000, guid: 9209eaa5f41588e47b9195c6cd22e25b, type: 3}
-  duration: 30
-  fireCooldown: 0.8
-  pellets: 5
-  spreadAngle: 36
+  duration: 15
+  chargeTime: 1.2
+  recovery: 0.15
+  minCharge: 0.3
+  tapSpeed: 0.5
+  tapPower: 0.15
   style: 0
-  projectileSpeed: 22.5
-  power: 9
-  lifetime: 0.24000001
-  projectileScale: 0.8
-  bounces: 0
+  projectileSpeed: 18
+  power: 60
+  lifetime: 1.4
+  projectileScale: 1
+  chargeTimeMultiplier: 1
+  speedMultiplier: 1.1
+  powerMultiplier: 0.5
+  lifetimeMultiplier: 0.6
+  scaleMultiplier: 0.85
+  extraPellets: 4
+  spreadAngle: 36
+  extraBounces: 0
   explosionRadius: 0
   explosionEdgePower: 0.35
+  changeStyle: 0
+  styleOverride: 1

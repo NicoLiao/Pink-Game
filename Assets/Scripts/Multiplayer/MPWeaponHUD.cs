@@ -1,29 +1,27 @@
-using TMPro;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace LoveShot.Multiplayer
 {
-    // HUD orb for the local player's weapon, styled like a skill slot: the weapon icon in an orb whose dark
-    // overlay fills as a picked-up weapon runs out, with the ammo underneath: seconds left, or an infinity
-    // symbol for the Default Gun. The glow marks a timed weapon and blinks when it is about to run out.
-    // Pops when a weapon is picked up.
+    // HUD orb for the local player's bow, styled like a skill slot: the bow icon in an orb whose ring sweeps around
+    // as you hold fire to charge (the glow lights up and blinks at full charge), with a row of small orbs under it,
+    // one per active modifier (instantiated from a prefab), each draining as its timer runs out.
+    // Pops when a modifier is picked up.
     public class MPWeaponHUD : MonoBehaviour
     {
         [SerializeField] UnityEngine.UI.Image icon;
-        [Tooltip("Filled (Radial 360) dark overlay; its fill is the fraction of the weapon's time already used.")]
-        [SerializeField] UnityEngine.UI.Image timeOverlay;
-        [Tooltip("Lit while a timed weapon is equipped; blinks in the last seconds.")]
+        [Tooltip("Filled (Radial 360) ring; its fill is the current charge.")]
+        [SerializeField] UnityEngine.UI.Image chargeRing;
+        [Tooltip("Lit while charging, blinks at full charge.")]
         [SerializeField] UnityEngine.UI.Image glow;
-        [Tooltip("Seconds left under the orb (timed weapons).")]
-        [SerializeField] TMP_Text ammoText;
-        [Tooltip("Shown instead of the ammo text for the Default Gun.")]
-        [SerializeField] GameObject unlimitedSymbol;
-        [Tooltip("{0} = seconds left.")]
-        [SerializeField] string timedFormat = "{0:0.0}s";
+        [SerializeField] RectTransform modifierRoot;
+        [SerializeField] MPModifierSlot modifierSlotPrefab;
         [SerializeField, Min(0f)] float warningTime = 5f;
+        [SerializeField, Range(0f, 1f)] float chargingGlowAlpha = 0.6f;
         [SerializeField, Min(1f)] float popScale = 1.15f;
         [SerializeField, Min(0.01f)] float popDuration = 0.3f;
 
+        readonly List<MPModifierSlot> slots = new();
         MPPlayer bound;
         float popStartTime = float.NegativeInfinity;
 
@@ -42,27 +40,35 @@ namespace LoveShot.Multiplayer
         void LateUpdate()
         {
             Bind(MPPlayer.Local);
-            MPWeapon weapon = bound != null ? bound.Weapon : null;
-            if (weapon == null) return;
+            MPWeapon bow = bound != null ? bound.Bow : null;
+            if (bow == null) return;
 
-            bool timed = bound.WeaponIndex != 0;
-            float remaining = bound.WeaponRemaining;
-            if (icon != null) icon.sprite = weapon.Icon;
-            if (timeOverlay != null) timeOverlay.fillAmount = timed ? 1f - Mathf.Clamp01(remaining / weapon.Duration) : 0f;
-            if (ammoText != null)
-            {
-                ammoText.gameObject.SetActive(timed);
-                if (timed) ammoText.text = string.Format(timedFormat, remaining);
-            }
-            if (unlimitedSymbol != null) unlimitedSymbol.SetActive(!timed);
+            if (icon != null) icon.sprite = bow.Icon;
+            float charge = bound.ChargeFraction;
+            if (chargeRing != null) chargeRing.fillAmount = charge;
             if (glow != null)
             {
-                bool warning = timed && remaining <= warningTime;
-                glow.enabled = timed && (!warning || Mathf.Repeat(Time.unscaledTime * 4f, 1f) < 0.5f);
+                bool full = bound.IsCharging && charge >= 1f;
+                glow.enabled = bound.IsCharging && (!full || Mathf.Repeat(Time.unscaledTime * 6f, 1f) < 0.5f);
+                glow.color = new Color(glow.color.r, glow.color.g, glow.color.b, full ? 1f : chargingGlowAlpha);
             }
+
+            ShowModifiers();
 
             float t = (Time.unscaledTime - popStartTime) / popDuration;
             transform.localScale = Vector3.one * (1f + (t < 1f ? Mathf.Sin(t * Mathf.PI) * (popScale - 1f) : 0f));
+        }
+
+        void ShowModifiers()
+        {
+            int count = modifierRoot != null && modifierSlotPrefab != null ? bound.ModifierCount : 0;
+            while (slots.Count < count) slots.Add(Instantiate(modifierSlotPrefab, modifierRoot));
+            for (int i = 0; i < slots.Count; i++)
+            {
+                MPWeapon modifier = i < count ? bound.ModifierAt(i) : null;
+                slots[i].gameObject.SetActive(modifier != null);
+                if (modifier != null) slots[i].Show(modifier, bound.ModifierRemaining(i), warningTime);
+            }
         }
     }
 }

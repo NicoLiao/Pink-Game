@@ -74,6 +74,8 @@ namespace LoveShot.Multiplayer
 
         [Header("Projectiles")]
         [SerializeField] MPProjectile projectilePrefab;
+        [Tooltip("Shots fired by NPCs (a separate look and size from the players' shots).")]
+        [SerializeField] MPProjectile npcProjectilePrefab;
         [SerializeField] HeartBurst burstPrefab;
         [SerializeField] HeartRing ringPrefab;
         [SerializeField, Min(0f)] float explosionShake = 0.25f;
@@ -202,7 +204,9 @@ namespace LoveShot.Multiplayer
             {
                 Vector2 position = playerSpawns[info.Slot % playerSpawns.Length];
                 NetworkObject player = Instantiate(playerPrefab, position, Quaternion.identity);
-                player.GetComponent<MPPlayer>().InitSlot(info.Slot, lobby.TeamOfSlot(info.Slot));
+                MPPlayer spawnedPlayer = player.GetComponent<MPPlayer>();
+                spawnedPlayer.InitSlot(info.Slot, lobby.TeamOfSlot(info.Slot));
+                spawnedPlayer.InitAbilities(info.AbilitySpace, info.AbilityShift);
                 player.SpawnAsPlayerObject(info.ClientId, destroyWithScene: true);
                 slotsByClient[info.ClientId] = info.Slot;
             }
@@ -223,6 +227,28 @@ namespace LoveShot.Multiplayer
             }
             UpdateScores();
         }
+
+        // Host only: spawns another NPC of the same kind as `template` for a team and player (Duplicate).
+        public MPNpc ServerSpawnNpcLike(MPNpc template, Vector2 position, int team, int slot)
+        {
+            if (!IsServer || template == null || npcTypes == null) return null;
+            foreach (NpcSpawnOption option in npcTypes)
+            {
+                NetworkObject prefab = option.Prefab;
+                if (prefab == null || !prefab.TryGetComponent(out MPNpc candidate)
+                    || candidate.GetType() != template.GetType() || candidate.DefinedType != template.DefinedType) continue;
+                NetworkObject copy = Instantiate(prefab, position, Quaternion.identity);
+                copy.GetComponent<MPCapture>().InitOwner(team, slot);
+                copy.Spawn(destroyWithScene: true);
+                Physics2D.SyncTransforms();
+                return copy.GetComponent<MPNpc>();
+            }
+            return null;
+        }
+
+        // The pickup spawner on the same prefab (host).
+        public MPPickupSpawner Pickups => pickups != null ? pickups : pickups = GetComponent<MPPickupSpawner>();
+        MPPickupSpawner pickups;
 
         // Types still under their minimum come first; then a weighted pick among types not at their maximum.
         int PickNpcType(int[] spawned)
@@ -352,22 +378,20 @@ namespace LoveShot.Multiplayer
 
         // ---------- Projectiles ----------
 
-        // Host only. Fires one weapon shot (all its pellets, spread evenly across the weapon's cone).
+        // Host only. Fires one resolved shot (all its pellets, spread evenly across the cone).
         // predictSequence (non-zero) is the owner's shot number: the owner already shows these pellets.
-        public void FireWeapon(MPWeapon weapon, int team, int creditSlot, Vector2 origin, Vector2 direction, ulong shooterObjectId,
+        public void FireWeapon(MPFiring firing, int team, int creditSlot, Vector2 origin, Vector2 direction, ulong shooterObjectId,
             ushort predictSequence = 0)
         {
-            if (weapon == null || direction.sqrMagnitude < 0.0001f) return;
-            MPShot shot = weapon.Shot;
-            int pellets = weapon.Pellets;
-            for (int i = 0; i < pellets; i++)
-                Fire(team, creditSlot, origin, PelletDirection(weapon, direction, i), shot, true, shooterObjectId, PredictKey(predictSequence, i));
+            if (direction.sqrMagnitude < 0.0001f) return;
+            for (int i = 0; i < firing.Pellets; i++)
+                Fire(team, creditSlot, origin, PelletDirection(firing, direction, i), firing.Shot, true, shooterObjectId, PredictKey(predictSequence, i));
         }
 
-        static Vector2 PelletDirection(MPWeapon weapon, Vector2 direction, int pellet)
+        static Vector2 PelletDirection(MPFiring firing, Vector2 direction, int pellet)
         {
-            int pellets = weapon.Pellets;
-            float angle = pellets == 1 ? 0f : Mathf.Lerp(-weapon.SpreadAngle / 2f, weapon.SpreadAngle / 2f, pellet / (pellets - 1f));
+            int pellets = firing.Pellets;
+            float angle = pellets == 1 ? 0f : Mathf.Lerp(-firing.SpreadAngle / 2f, firing.SpreadAngle / 2f, pellet / (pellets - 1f));
             return Quaternion.Euler(0f, 0f, angle) * direction;
         }
 
@@ -383,16 +407,18 @@ namespace LoveShot.Multiplayer
             if (++nextProjectileId == 0) nextProjectileId = 1;
             ushort id = nextProjectileId;
             Vector2 velocity = direction.normalized * shot.Speed;
-            MPProjectile projectile = Instantiate(projectilePrefab, origin, Quaternion.identity);
+            MPProjectile projectile = Instantiate(PrefabFor(fromPlayer), origin, Quaternion.identity);
             projectile.Launch(this, id, team, creditSlot, velocity, shot, fromPlayer, shooterObjectId, authoritative: true);
             projectiles[id] = projectile;
-            SpawnProjectileRpc(id, origin, velocity, team, (byte)shot.Style, shot.Scale, (byte)shot.Bounces, shot.Lifetime, shot.ExplosionRadius,
-                shooterObjectId, predictKey);
+            SpawnProjectileRpc(id, origin, velocity, team, creditSlot, (byte)shot.Style, shot.Scale, (byte)shot.Bounces, shot.Lifetime, shot.ExplosionRadius,
+                shooterObjectId, predictKey, fromPlayer);
         }
 
+        MPProjectile PrefabFor(bool fromPlayer) => fromPlayer || npcProjectilePrefab == null ? projectilePrefab : npcProjectilePrefab;
+
         [Rpc(SendTo.NotServer)]
-        void SpawnProjectileRpc(ushort id, Vector2 origin, Vector2 velocity, int team, byte style, float scale, byte bounces, float lifetime,
-            float explosionRadius, ulong shooterObjectId, uint predictKey)
+        void SpawnProjectileRpc(ushort id, Vector2 origin, Vector2 velocity, int team, int creditSlot, byte style, float scale, byte bounces, float lifetime,
+            float explosionRadius, ulong shooterObjectId, uint predictKey, bool fromPlayer)
         {
             // Our own predicted shot: the copy already flying becomes this projectile (or already hit something).
             if (predictKey != 0 && MPPlayer.Local != null && MPPlayer.Local.NetworkObjectId == shooterObjectId
@@ -408,21 +434,21 @@ namespace LoveShot.Multiplayer
             }
             // Visual copy: power doesn't matter, the rest must match the host's flight exactly.
             var shot = new MPShot((ProjectileStyle)style, velocity.magnitude, 0f, lifetime, scale, bounces, explosionRadius);
-            MPProjectile projectile = Instantiate(projectilePrefab, origin, Quaternion.identity);
-            projectile.Launch(this, id, team, MPTeams.Neutral, velocity, shot, false, shooterObjectId, authoritative: false);
+            MPProjectile projectile = Instantiate(PrefabFor(fromPlayer), origin, Quaternion.identity);
+            projectile.Launch(this, id, team, creditSlot, velocity, shot, false, shooterObjectId, authoritative: false);
             projectiles[id] = projectile;
         }
 
         // Client, owner: shows its own weapon shot immediately, before the host confirms it.
-        public void PredictWeapon(MPWeapon weapon, int team, int creditSlot, Vector2 origin, Vector2 direction, ulong shooterObjectId, ushort sequence)
+        public void PredictWeapon(MPFiring firing, int team, int creditSlot, Vector2 origin, Vector2 direction, ulong shooterObjectId, ushort sequence)
         {
-            if (IsServer || weapon == null || projectilePrefab == null) return;
-            // Unconfirmed leftovers (e.g. a weapon swap changed the pellet count) are cosmetic; don't let them pile up.
+            if (IsServer || projectilePrefab == null) return;
+            // Unconfirmed leftovers (e.g. a modifier ran out and changed the pellet count) are cosmetic; don't let them pile up.
             if (predicted.Count > 128) predicted.Clear();
-            MPShot shot = weapon.Shot;
-            for (int i = 0; i < weapon.Pellets; i++)
+            MPShot shot = firing.Shot;
+            for (int i = 0; i < firing.Pellets; i++)
             {
-                Vector2 velocity = PelletDirection(weapon, direction, i).normalized * shot.Speed;
+                Vector2 velocity = PelletDirection(firing, direction, i).normalized * shot.Speed;
                 MPProjectile projectile = Instantiate(projectilePrefab, origin, Quaternion.identity);
                 projectile.Launch(this, 0, team, creditSlot, velocity, shot, true, shooterObjectId, authoritative: false);
                 uint key = PredictKey(sequence, i);

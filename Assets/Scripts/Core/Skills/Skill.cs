@@ -14,10 +14,10 @@ namespace LoveShot
         [SerializeField] string keyLabel = "";
         [SerializeField] Sprite icon;
 
-        public string DisplayName => displayName;
+        public virtual string DisplayName => displayName;
         public Key Key => key;
         public string KeyLabel => string.IsNullOrEmpty(keyLabel) ? key.ToString().ToUpperInvariant() : keyLabel;
-        public Sprite Icon => icon;
+        public virtual Sprite Icon => icon;
 
         // Full cooldown length and time left, in seconds.
         public abstract float Cooldown { get; }

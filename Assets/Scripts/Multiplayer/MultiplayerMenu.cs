@@ -17,6 +17,8 @@ namespace LoveShot.Multiplayer
         [SerializeField] TMP_Text multiplayerStatus;
         [SerializeField] TMP_Text joinStatus;
         [SerializeField] TMP_InputField codeInput;
+        [Tooltip("Player name field on the main page; remembered between sessions.")]
+        [SerializeField] TMP_InputField nameInput;
         [Tooltip("Buttons disabled while a request is running.")]
         [SerializeField] UnityEngine.UI.Selectable[] busyDisabled;
         [SerializeField] Color errorColor = new Color(0.9f, 0.2f, 0.35f);
@@ -28,6 +30,7 @@ namespace LoveShot.Multiplayer
         {
             SetStatus(multiplayerStatus, "", false);
             SetStatus(joinStatus, "", false);
+            if (nameInput != null) nameInput.text = MPConnection.SavedName;
             if (!MPConnection.ReturnToMultiplayerMenu) return;
 
             // Back from a session (left, host quit, kicked...): reopen this page with the reason.
@@ -43,7 +46,9 @@ namespace LoveShot.Multiplayer
             if (busy) return;
             SetBusy(true);
             SetStatus(multiplayerStatus, "Creating a private room...", false);
-            string error = await MPConnection.Ensure(networkPrefab).HostAsync();
+            MPConnection connection = MPConnection.Ensure(networkPrefab);
+            connection.SetLocalName(nameInput != null ? nameInput.text : "");
+            string error = await connection.HostAsync();
             if (this == null) return;
             if (error != null) Fail(multiplayerStatus, error);
         }
@@ -71,7 +76,9 @@ namespace LoveShot.Multiplayer
             }
             SetBusy(true);
             SetStatus(joinStatus, "Joining...", false);
-            string error = await MPConnection.Ensure(networkPrefab).JoinAsync(code);
+            MPConnection connection = MPConnection.Ensure(networkPrefab);
+            connection.SetLocalName(nameInput != null ? nameInput.text : "");
+            string error = await connection.JoinAsync(code);
             if (this == null) return;
             if (error != null) Fail(joinStatus, error);
             else SetStatus(joinStatus, "Connected! Loading the lobby...", false);
