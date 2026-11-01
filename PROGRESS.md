@@ -303,3 +303,4 @@ Other checks:
 - Lobby names (2026-11-01): a `PlayerName` TMP under each of the four icons in `MPLobby.unity`, filled by `MPLobbyUI.playerNames` (blank while the slot is empty, in the player's identity text color). NOT yet compiled or viewed; check it against the ability picker under your icon.
 
 - Replace Fonts tool (2026-11-01): `Assets/Editor/ReplaceFontsWindow.cs`, menu **LoveShot > Replace Fonts...**: sets one TMP font asset on every TMP text and input field in all scenes/prefabs under Assets (with a count-only button). NOT yet compiled or run; commit before using it.
+- Replace Font Styles tool (2026-11-01): `Assets/Editor/ReplaceFontStylesWindow.cs`, menu **LoveShot > Replace Font Styles...** (Set / Add / Remove Bold and Italic on every TMP text). Both tools now share `Assets/Editor/TmpBatch.cs`. NOT yet compiled or run; commit before using.

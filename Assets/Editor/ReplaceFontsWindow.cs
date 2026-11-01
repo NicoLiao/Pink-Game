@@ -1,9 +1,6 @@
-using System.Collections.Generic;
 using TMPro;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace LoveShot.Editor
 {
@@ -28,87 +25,29 @@ namespace LoveShot.Editor
             using (new EditorGUI.DisabledScope(target == null))
             {
                 if (GUILayout.Button("Count texts")) result = Run(apply: false);
-                if (GUILayout.Button("Replace all")) Replace();
+                if (GUILayout.Button("Replace all") && Confirm()) result = Run(apply: true);
             }
             if (result.Length > 0) EditorGUILayout.HelpBox(result, MessageType.Info);
         }
 
-        void Replace()
+        bool Confirm()
         {
-            if (!EditorUtility.DisplayDialog("Replace fonts", $"Set {target.name} on every text in all {(includeScenes ? "scenes" : "")}{(includeScenes && includePrefabs ? " and " : "")}{(includePrefabs ? "prefabs" : "")}? Commit first.", "Replace", "Cancel")) return;
-            if (includeScenes && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
-            result = Run(apply: true);
-            AssetDatabase.SaveAssets();
+            if (!EditorUtility.DisplayDialog("Replace fonts", $"Set {target.name} on every text in the chosen scenes and prefabs? Commit first.", "Replace", "Cancel")) return false;
+            return !includeScenes || UnityEditor.SceneManagement.EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
         }
 
-        // Returns a summary. Without `apply` nothing is changed, only counted.
-        string Run(bool apply)
-        {
-            int texts = 0, changed = 0, assets = 0;
-            if (includePrefabs)
+        string Run(bool apply) => TmpBatch.Run(includeScenes, includePrefabs, apply,
+            text =>
             {
-                foreach (string guid in AssetDatabase.FindAssets("t:Prefab", new[] { "Assets" }))
-                {
-                    string path = AssetDatabase.GUIDToAssetPath(guid);
-                    GameObject root = PrefabUtility.LoadPrefabContents(path);
-                    try
-                    {
-                        int before = changed;
-                        Visit(root.GetComponentsInChildren<TMP_Text>(true), root.GetComponentsInChildren<TMP_InputField>(true), apply, ref texts, ref changed);
-                        if (apply && changed > before)
-                        {
-                            PrefabUtility.SaveAsPrefabAsset(root, path);
-                            assets++;
-                        }
-                    }
-                    finally
-                    {
-                        PrefabUtility.UnloadPrefabContents(root);
-                    }
-                }
-            }
-            if (includeScenes)
+                if (text.font == target) return false;
+                if (apply) text.font = target;
+                return true;
+            },
+            input =>
             {
-                var openScenes = new List<string>();
-                for (int i = 0; i < SceneManager.sceneCount; i++) openScenes.Add(SceneManager.GetSceneAt(i).path);
-                foreach (string guid in AssetDatabase.FindAssets("t:Scene", new[] { "Assets" }))
-                {
-                    string path = AssetDatabase.GUIDToAssetPath(guid);
-                    Scene scene = EditorSceneManager.OpenScene(path, OpenSceneMode.Additive);
-                    int before = changed;
-                    foreach (GameObject root in scene.GetRootGameObjects())
-                        Visit(root.GetComponentsInChildren<TMP_Text>(true), root.GetComponentsInChildren<TMP_InputField>(true), apply, ref texts, ref changed);
-                    if (apply && changed > before)
-                    {
-                        EditorSceneManager.MarkSceneDirty(scene);
-                        EditorSceneManager.SaveScene(scene);
-                        assets++;
-                    }
-                    if (openScenes.Contains(path)) continue;
-                    EditorSceneManager.CloseScene(scene, true);
-                }
-            }
-            return apply ? $"Changed {changed} of {texts} texts in {assets} assets." : $"{texts} texts found, {changed} would change.";
-        }
-
-        void Visit(TMP_Text[] allTexts, TMP_InputField[] inputs, bool apply, ref int texts, ref int changed)
-        {
-            foreach (TMP_Text text in allTexts)
-            {
-                texts++;
-                if (text.font == target) continue;
-                changed++;
-                if (!apply) continue;
-                text.font = target;
-                EditorUtility.SetDirty(text);
-            }
-            if (!apply) return;
-            foreach (TMP_InputField input in inputs)
-            {
-                if (input.fontAsset == target) continue;
-                input.fontAsset = target;
-                EditorUtility.SetDirty(input);
-            }
-        }
+                if (input.fontAsset == target) return false;
+                if (apply) input.fontAsset = target;
+                return true;
+            });
     }
 }
