@@ -22,3 +22,13 @@ MonoBehaviour:
   size: 0.75
   healthMultiplier: 2
   spread: 1
+  useSound:
+    clips:
+    - {fileID: 8300000, guid: fda65ffc19a259b4ab9a1ce09a2c46fa, type: 3}
+    volume: 0.3
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 0
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0

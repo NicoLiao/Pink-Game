@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LoveShot.Audio;
 using UnityEngine;
 
 namespace LoveShot.Multiplayer
@@ -27,7 +28,11 @@ namespace LoveShot.Multiplayer
         [Tooltip("Duplicate: how far from its original a copy appears.")]
         [SerializeField, Min(0f)] float spread = 1f;
 
+        [Tooltip("Played where the player stands whenever anyone uses it (for Dash, every dash).")]
+        [SerializeField] Sound useSound;
+
         public MPAbility Kind => kind;
+        public Sound UseSound => useSound;
         public string DisplayName => displayName;
         public Sprite Icon => icon;
         public float Cooldown => cooldown;

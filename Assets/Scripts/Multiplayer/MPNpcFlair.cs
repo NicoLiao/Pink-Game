@@ -74,8 +74,20 @@ namespace LoveShot.Multiplayer
             if (hugger != null) hugger.Hugged -= OnHugged;
         }
 
+        // Raised on every machine with the NPC's position: a Drama Queen's burst and a Hugger's hug.
+        public static event System.Action<Vector2> QueenBursted;
+        public static event System.Action<Vector2> HugLanded;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            QueenBursted = null;
+            HugLanded = null;
+        }
+
         void OnBurst(int team)
         {
+            QueenBursted?.Invoke(transform.position);
             HeartRing.Play(ringPrefab, transform.position, MPTeams.ColorOf(team), queen.BurstRadius, 20);
             HeartBurst.Play(burstPrefab, transform.position, MPTeams.ColorOf(team), 1.6f, 14);
             if (MPPlayer.Local != null && Vector2.Distance(MPPlayer.Local.Position, transform.position) < queen.BurstRadius * 2f)
@@ -84,6 +96,7 @@ namespace LoveShot.Multiplayer
 
         void OnHugged(Vector2 point, int team)
         {
+            HugLanded?.Invoke(point);
             HeartBurst.Play(burstPrefab, point, MPTeams.ColorOf(team), 1.3f, 12);
             HeartBurst.Play(burstPrefab, point, Color.white, 0.6f, 5);
         }

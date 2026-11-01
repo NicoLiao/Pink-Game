@@ -18,6 +18,12 @@ namespace LoveShot.Multiplayer
         [Tooltip("Seconds before despawning during which it blinks.")]
         [SerializeField, Min(0f)] float blinkTime = 3f;
 
+        // Raised on every machine, with the pickup's position, when a player collects one.
+        public static event System.Action<Vector2> CollectedAnywhere;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => CollectedAnywhere = null;
+
         readonly NetworkVariable<byte> weapon = new(1);
         readonly NetworkVariable<double> despawnTime = new(0d);
 
@@ -80,6 +86,7 @@ namespace LoveShot.Multiplayer
         [Rpc(SendTo.ClientsAndHost)]
         void CollectedRpc(Color color)
         {
+            CollectedAnywhere?.Invoke(transform.position);
             HeartBurst.Play(burstPrefab, transform.position, color, 1.3f, 12);
             HeartBurst.Play(burstPrefab, transform.position, Color.white, 0.7f, 6);
         }

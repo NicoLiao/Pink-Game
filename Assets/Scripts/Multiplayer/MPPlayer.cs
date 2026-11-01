@@ -177,6 +177,12 @@ namespace LoveShot.Multiplayer
         public string DisplayName => MPLobby.Instance != null ? MPLobby.Instance.NameOf(slot.Value) : MPTeams.NameOf(slot.Value);
         double Now => NetworkManager != null ? NetworkManager.ServerTime.Time : 0d;
 
+        // (player, ability) raised on every machine whenever anyone uses an ability, Dash included.
+        public static event Action<MPPlayer, MPAbility> AbilityUsedAnywhere;
+        // Raised on every machine when any player is lovestruck, or converted to another team.
+        public static event Action<MPPlayer> StruckAnywhere;
+        public static event Action<MPPlayer> ConvertedAnywhere;
+
         // Raised on every machine (immediately on the owner).
         public event Action<Vector2> Dashed;
         public event Action Struck;
@@ -188,6 +194,9 @@ namespace LoveShot.Multiplayer
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
         {
+            AbilityUsedAnywhere = null;
+            StruckAnywhere = null;
+            ConvertedAnywhere = null;
             bySlot.Clear();
             all.Clear();
             Local = null;
@@ -252,7 +261,9 @@ namespace LoveShot.Multiplayer
 
         void OnTeamChanged(int previous, int current)
         {
-            if (MPTeams.IsTeam(previous) && MPTeams.IsTeam(current)) Converted?.Invoke(previous, current);
+            if (!MPTeams.IsTeam(previous) || !MPTeams.IsTeam(current)) return;
+            Converted?.Invoke(previous, current);
+            ConvertedAnywhere?.Invoke(this);
         }
 
         void Update()
@@ -406,7 +417,7 @@ namespace LoveShot.Multiplayer
             direction.Normalize();
             if (!mover.TryDash(direction)) return false;
             predictedDashReady = Time.time + DashCooldown;
-            Dashed?.Invoke(direction);
+            RaiseDashed(direction);
             RequestDashRpc(direction);
             return true;
         }
@@ -507,11 +518,15 @@ namespace LoveShot.Multiplayer
             if (abilitySlot == 0) state.Ready0 = Now + AbilityCooldown(abilitySlot);
             else state.Ready1 = Now + AbilityCooldown(abilitySlot);
             abilities.Value = state;
-            AbilityUsedRpc(Def(current).Radius);
+            AbilityUsedRpc((byte)current, Def(current).Radius);
         }
 
         [Rpc(SendTo.ClientsAndHost)]
-        void AbilityUsedRpc(float radius) => HeartRing.Play(abilityRingPrefab, transform.position, MPTeams.ColorOf(Team), radius, 18);
+        void AbilityUsedRpc(byte kind, float radius)
+        {
+            HeartRing.Play(abilityRingPrefab, transform.position, MPTeams.ColorOf(Team), radius, 18);
+            AbilityUsedAnywhere?.Invoke(this, (MPAbility)kind);
+        }
 
         // Host: everything on this team in range gets its loyalty back.
         void ServerHeal()
@@ -558,7 +573,13 @@ namespace LoveShot.Multiplayer
         }
 
         [Rpc(SendTo.NotOwner)]
-        void DashedRpc(Vector2 direction) => Dashed?.Invoke(direction);
+        void DashedRpc(Vector2 direction) => RaiseDashed(direction);
+
+        void RaiseDashed(Vector2 direction)
+        {
+            Dashed?.Invoke(direction);
+            AbilityUsedAnywhere?.Invoke(this, MPAbility.Dash);
+        }
 
         void Simulate()
         {
@@ -630,7 +651,11 @@ namespace LoveShot.Multiplayer
         }
 
         [Rpc(SendTo.ClientsAndHost)]
-        void StruckRpc() => Struck?.Invoke();
+        void StruckRpc()
+        {
+            Struck?.Invoke();
+            StruckAnywhere?.Invoke(this);
+        }
 
         // Host: a hit by `team`. Returns false if the shot passes
         // through: own team (no friendly fire) or conversion immunity. Player shots also lovestruck.

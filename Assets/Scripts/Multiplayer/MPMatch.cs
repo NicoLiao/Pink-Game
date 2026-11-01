@@ -435,7 +435,7 @@ namespace LoveShot.Multiplayer
             // Visual copy: power doesn't matter, the rest must match the host's flight exactly.
             var shot = new MPShot((ProjectileStyle)style, velocity.magnitude, 0f, lifetime, scale, bounces, explosionRadius);
             MPProjectile projectile = Instantiate(PrefabFor(fromPlayer), origin, Quaternion.identity);
-            projectile.Launch(this, id, team, creditSlot, velocity, shot, false, shooterObjectId, authoritative: false);
+            projectile.Launch(this, id, team, creditSlot, velocity, shot, fromPlayer, shooterObjectId, authoritative: false);
             projectiles[id] = projectile;
         }
 
@@ -529,8 +529,15 @@ namespace LoveShot.Multiplayer
             if (projectiles.TryGetValue(id, out MPProjectile projectile) && projectile != null) projectile.Remove(false);
         }
 
+        // (position, explosion radius or 0 for a plain hit), raised on every machine whenever a shot lands.
+        public static event Action<Vector2, float> ImpactPlayed;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetImpactEvent() => ImpactPlayed = null;
+
         void PlayImpact(Vector2 position, int team, float explosionRadius)
         {
+            ImpactPlayed?.Invoke(position, explosionRadius);
             if (explosionRadius <= 0f)
             {
                 HeartBurst.Play(burstPrefab, position, Color.white, 0.35f, 3);

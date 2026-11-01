@@ -44,7 +44,20 @@ namespace LoveShot.Multiplayer
         float dieTime;
         float nextTrailTime;
 
+        // Raised on every machine for each projectile that appears (projectile, whether a player fired it).
+        public static event System.Action<MPProjectile, bool> Launched;
+        // Raised on every machine when a projectile ricochets off a wall.
+        public static event System.Action<MPProjectile> Bounced;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            Launched = null;
+            Bounced = null;
+        }
+
         public ushort Id { get; private set; }
+        public ProjectileStyle Style => shot.Style;
         // Client: identifies an own shot shown before the host confirmed it (0 otherwise).
         public uint PredictKey { get; set; }
 
@@ -81,6 +94,7 @@ namespace LoveShot.Multiplayer
             ShowEmblem();
             FaceVelocity();
             KickShooter();
+            Launched?.Invoke(this, fromPlayer);
         }
 
         // Arrows and rockets carry the shooter's own symbol (identity); an arrow's tip takes the team color.
@@ -153,6 +167,7 @@ namespace LoveShot.Multiplayer
             body.position = hit.centroid + hit.normal * 0.01f;
             body.linearVelocity = Vector2.Reflect(velocity, hit.normal);
             FaceVelocity();
+            Bounced?.Invoke(this);
         }
 
         void FaceVelocity()

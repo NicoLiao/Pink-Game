@@ -134,3 +134,11 @@ Numbers are current Inspector defaults (tunable), not final balance.
 - **[Confirmed]** End screen: each player icon has the player's name under it (in their identity text color).
 
 - **[Confirmed]** Player name: a name field on the main menu's first page (remembered between sessions, 16 letters max; empty = a random Guest name). If someone already has a name in the lobby, the player who arrives later gets " #2", " #3"...
+
+- **[Confirmed]** Sound: an NPC joining a team plays a capture sound where it stands (one for recruiting a neutral, one for stealing), heard by everyone and quieter with distance. The clips are assigned in the arena's `ArenaSfx` object.
+
+- **[Confirmed]** More sound: a shot sound for players and one for NPCs (played per projectile, with a voice cap), and a use sound per ability (Dash on every dash, Group Heal on the aura, Powerup, Duplicate), set on each ability asset.
+
+- **[Confirmed]** Sound list (all slots on the arena's `ArenaSfx`): shots (player, NPC, Cupid), shot impact, rocket explosion, wall bounce, bow charge loop (rising pitch) and full-charge ping, lovestruck, converted, pickup, ability ready, Celebrity joining, Drama Queen burst, Hugger hug, countdown ticks and go, last-10-seconds ticks, win and lose stings.
+
+- **[Confirmed]** Hit vignette: the screen edges tint in the attacker's color. Its base strength scales with how close you are to being converted (the capture progress against you), each enemy hit spikes it briefly, and being converted flashes it at full.

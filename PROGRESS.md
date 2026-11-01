@@ -304,3 +304,25 @@ Other checks:
 
 - Replace Fonts tool (2026-11-01): `Assets/Editor/ReplaceFontsWindow.cs`, menu **LoveShot > Replace Fonts...**: sets one TMP font asset on every TMP text and input field in all scenes/prefabs under Assets (with a count-only button). NOT yet compiled or run; commit before using it.
 - Replace Font Styles tool (2026-11-01): `Assets/Editor/ReplaceFontStylesWindow.cs`, menu **LoveShot > Replace Font Styles...** (Set / Add / Remove Bold and Italic on every TMP text). Both tools now share `Assets/Editor/TmpBatch.cs`. NOT yet compiled or run; commit before using.
+
+## Audio API + screenshot taker (2026-11-01)
+- Ported from the chroma project, NOT yet compiled or viewed: `Assets/Scripts/Audio` (`GameAudio`, `Sound`, `SoundHandle`, `VoiceGain`, namespace `LoveShot.Audio`): crossfading music with optional intro, pooled sound-effect voices that grow, held/looping sounds with handles, volumes boosted above 1 via `VoiceGain`, saved player music/sfx volumes. The `GameConfig` dependency became fields on `GameAudio` (music, intro, fade, volumes, save-key prefix). New `Assets/Prefabs/GameAudio.prefab` (the component plus MusicA/B, IntroA/B and one Voice source). It is not placed in any scene yet and nothing calls it; use `[SerializeField] Sound` fields on a component and `audio.Play(sound)` / `PlayAt`.
+- `Assets/Editor/ScreenshotTaker.cs`: **LoveShot > Screenshot > Game View** (F12) saves the Game view, UI included, as a PNG in `Screenshots/` next to `Assets`.
+
+## Main menu audio (2026-11-01)
+- `MainMenu.unity` now has a `GameAudio` prefab instance and a new `ButtonSound` (`Assets/Scripts/UI/ButtonSound.cs`) on every button that has `ButtonBounce`, each wired to it with empty `hover` and `click` sounds. There are no audio clips in the project yet: assign `Music` / `Music Intro` on the GameAudio object and the hover/click clips on the buttons. NOT yet compiled or viewed; the prefab instance and its stripped component reference were written by hand.
+
+## NPC capture sfx (2026-11-01)
+- `MPCapture.OwnerChangedAnywhere` (static event) + new `MPCaptureSfx` (`CaptureSfx` object in `MPArena.unity`, with its own `GameAudio` prefab instance): plays `recruited` / `stolen` at the NPC's position on every machine. The clips are empty (none in the project yet); the 3D range is 20-80 units so the whole screen is near full volume. NOT yet compiled or viewed; the prefab instance was written by hand.
+
+- `PlatformSwitch` (2026-11-01, `Assets/Scripts/Core/PlatformSwitch.cs`): lists of objects/components that are on only in a WebGL build or everywhere except it; runs at execution order -1000; `simulateWebInEditor` to test. Not placed in any scene yet. NOT yet compiled.
+
+- Sfx update (2026-11-01): `MPCaptureSfx` became `MPArenaSfx` (object `ArenaSfx` in `MPArena.unity`, same script guid): capture sounds + `playerShot` / `npcShot` (voice caps 4 / 3) + ability use sounds from each `MPAbilityDef.useSound`. New static events: `MPProjectile.Launched`, `MPPlayer.AbilityUsedAnywhere` (Dash included). Visual projectile copies now get the real `fromPlayer`. NOT yet compiled or viewed. The capture clips already assigned in the scene were kept.
+
+## Global button sounds (2026-11-01)
+- `ButtonSound` is gone; one `UiSounds` per scene (`Assets/Scripts/UI/UiSounds.cs`, object `UiSounds` in `MainMenu.unity` and `MPLobby.unity`, the lobby also got a `GameAudio` instance) plays `hover` / `click` for any usable Button or Toggle under the mouse, including ones created at run time. Clips empty. NOT yet compiled or viewed.
+
+- Sfx batch 2 (2026-11-01): `MPArenaSfx` now covers feedback, NPC and flow sounds. New static events: `MPMatch.ImpactPlayed`, `MPProjectile.Bounced` (+ `Style`), `MPPlayer.StruckAnywhere` / `ConvertedAnywhere`, `MPWeaponPickup.CollectedAnywhere`, `MPNpcFlair.QueenBursted` / `HugLanded`. The charge loop, ability-ready ping, countdown/go, last-10s ticks and win/lose sting are polled for the local player. All clips empty; the new slots were appended to `ArenaSfx` in `MPArena.unity` (existing assigned clips kept). NOT yet compiled or viewed.
+
+## Hit vignette (2026-11-01)
+- `MPHitVignette` (`HitVignette` image, first child of the HUD canvas in `MPArena.unity`) + new `Assets/Art/Generated/Vignette.png` (rounded-square alpha falloff, tinted at run time; hand-written meta): alpha = capture progress x `baseStrength` (smoothed) + decaying spikes per enemy hit (`MPCapture.HitReceived`) and a full flash on conversion; color = capturer's team color. NOT yet compiled or viewed; tune `baseStrength`, `hitSpike`, `spikeFade`.

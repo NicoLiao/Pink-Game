@@ -58,9 +58,15 @@ namespace LoveShot.Multiplayer
         public event Action<int, int> OwnerChanged;
         // Raised on every machine for each accepted hit, with the shooter's team.
         public event Action<int> HitReceived;
+        // (character, previous team, current team), raised on every machine when any character changes team.
+        public static event Action<MPCapture, int, int> OwnerChangedAnywhere;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() => all.Clear();
+        static void ResetStatics()
+        {
+            all.Clear();
+            OwnerChangedAnywhere = null;
+        }
 
         void Awake()
         {
@@ -82,7 +88,11 @@ namespace LoveShot.Multiplayer
             hits.OnValueChanged -= OnHitsChanged;
         }
 
-        void OnOwnerValueChanged(int previous, int current) => OwnerChanged?.Invoke(previous, current);
+        void OnOwnerValueChanged(int previous, int current)
+        {
+            OwnerChanged?.Invoke(previous, current);
+            OwnerChangedAnywhere?.Invoke(this, previous, current);
+        }
 
         void OnHitsChanged(int previous, int current) => HitReceived?.Invoke(lastHitTeam.Value);
 

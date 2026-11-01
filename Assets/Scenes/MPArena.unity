@@ -8249,6 +8249,7 @@ RectTransform:
   m_LocalScale: {x: 0, y: 0, z: 0}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 9850000002}
   - {fileID: 1757221231}
   - {fileID: 981859428}
   - {fileID: 1523783109}
@@ -8262,10 +8263,396 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 0}
+--- !u!1001 &9830000001
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 970100001, guid: b4c6d8e0f2a34b5c4d6e7f9a1b3c5da6, type: 3}
+      propertyPath: m_Name
+      value: GameAudio
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: b4c6d8e0f2a34b5c4d6e7f9a1b3c5da6, type: 3}
+--- !u!114 &9830000002 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 970100003, guid: b4c6d8e0f2a34b5c4d6e7f9a1b3c5da6, type: 3}
+  m_PrefabInstance: {fileID: 9830000001}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f2a4b6c8d0e14f3a2b4c5d7e9f1a3b84, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Audio.GameAudio
+--- !u!1 &9830000003
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 9830000004}
+  - component: {fileID: 9830000005}
+  m_Layer: 0
+  m_Name: ArenaSfx
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &9830000004
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9830000003}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &9830000005
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9830000003}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d6e8f0a2b4c54d7e6f8a9b1c3d5e7fc8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPArenaSfx
+  gameAudio: {fileID: 9830000002}
+  recruited:
+    clips:
+    - {fileID: 8300000, guid: c740fcabd9f5ace49a376ab0fe9c00ed, type: 3}
+    - {fileID: 8300000, guid: 4e622156296328a46905aba6b25825b0, type: 3}
+    - {fileID: 8300000, guid: 5f4e67d35b80bf7468ddd651f1871a08, type: 3}
+    volume: 0.6
+    pitch: {x: 0.9, y: 1.1}
+    loop: 0
+    maxVoices: 0
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  stolen:
+    clips:
+    - {fileID: 8300000, guid: c740fcabd9f5ace49a376ab0fe9c00ed, type: 3}
+    - {fileID: 8300000, guid: 4e622156296328a46905aba6b25825b0, type: 3}
+    - {fileID: 8300000, guid: 5f4e67d35b80bf7468ddd651f1871a08, type: 3}
+    volume: 0.8
+    pitch: {x: 0.9, y: 1.1}
+    loop: 0
+    maxVoices: 0
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  celebrityJoined:
+    clips: []
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 1
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  playerShot:
+    clips:
+    - {fileID: 8300000, guid: 1c7e0b3f4eb3abb4f997e95e9cf471e2, type: 3}
+    volume: 0.1
+    pitch: {x: 0.8, y: 1.1}
+    loop: 0
+    maxVoices: 4
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  npcShot:
+    clips:
+    - {fileID: 8300000, guid: c740fcabd9f5ace49a376ab0fe9c00ed, type: 3}
+    volume: 0.05
+    pitch: {x: 0.8, y: 1.2}
+    loop: 0
+    maxVoices: 8
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  cupidArrow:
+    clips:
+    - {fileID: 8300000, guid: 1c7e0b3f4eb3abb4f997e95e9cf471e2, type: 3}
+    volume: 0.05
+    pitch: {x: 0.9, y: 1.1}
+    loop: 0
+    maxVoices: 2
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  impact:
+    clips: []
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 6
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  explosion:
+    clips:
+    - {fileID: 8300000, guid: fda65ffc19a259b4ab9a1ce09a2c46fa, type: 3}
+    volume: 0.1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 3
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  bounce:
+    clips:
+    - {fileID: 8300000, guid: 1de5ed7d7733f5f49a9b51aca1469a90, type: 3}
+    volume: 2
+    pitch: {x: 0.9, y: 1.1}
+    loop: 0
+    maxVoices: 4
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  chargeLoop:
+    clips: []
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 1
+    maxVoices: 0
+    minDistance: 1
+    maxDistance: 500
+    doppler: 0
+  chargePitch: {x: 0.8, y: 1.6}
+  chargeFull:
+    clips:
+    - {fileID: 8300000, guid: 82ce4bd1c16559944a745a1f1119f421, type: 3}
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 0
+    minDistance: 1
+    maxDistance: 500
+    doppler: 0
+  struck:
+    clips:
+    - {fileID: 8300000, guid: 39de66ff13994fa4d88f450fe30d4b25, type: 3}
+    volume: 0.5
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 3
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  converted:
+    clips:
+    - {fileID: 8300000, guid: a0f34f56d22e6b14d8cf2317bc3c2b5f, type: 3}
+    volume: 0.3
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 2
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  pickup:
+    clips: []
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 3
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  abilityReady:
+    clips: []
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 0
+    minDistance: 1
+    maxDistance: 500
+    doppler: 0
+  queenBurst:
+    clips:
+    - {fileID: 8300000, guid: fda65ffc19a259b4ab9a1ce09a2c46fa, type: 3}
+    volume: 0.1
+    pitch: {x: 0.9, y: 1.1}
+    loop: 0
+    maxVoices: 2
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  hug:
+    clips:
+    - {fileID: 8300000, guid: 1c7e0b3f4eb3abb4f997e95e9cf471e2, type: 3}
+    volume: 0.1
+    pitch: {x: 0.8, y: 1.2}
+    loop: 0
+    maxVoices: 3
+    minDistance: 20
+    maxDistance: 80
+    doppler: 0
+  countdownTick:
+    clips: []
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 0
+    minDistance: 1
+    maxDistance: 500
+    doppler: 0
+  go:
+    clips: []
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 0
+    minDistance: 1
+    maxDistance: 500
+    doppler: 0
+  timeTick:
+    clips: []
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 0
+    minDistance: 1
+    maxDistance: 500
+    doppler: 0
+  timeTickFrom: 10
+  win:
+    clips: []
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 0
+    minDistance: 1
+    maxDistance: 500
+    doppler: 0
+  lose:
+    clips: []
+    volume: 1
+    pitch: {x: 1, y: 1}
+    loop: 0
+    maxVoices: 0
+    minDistance: 1
+    maxDistance: 500
+    doppler: 0
+--- !u!1 &9850000001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 9850000002}
+  - component: {fileID: 9850000003}
+  - component: {fileID: 9850000004}
+  - component: {fileID: 9850000005}
+  m_Layer: 5
+  m_Name: HitVignette
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &9850000002
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9850000001}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2104324315}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 1, y: 1}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!222 &9850000003
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9850000001}
+  m_CullTransparentMesh: 1
+--- !u!114 &9850000004
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9850000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_Material: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 0}
+  m_RaycastTarget: 0
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: 21300000, guid: a1b3c5d7e9f04a2b8c4d6e8f0a1b3c57, type: 3}
+  m_Type: 0
+  m_PreserveAspect: 0
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
+--- !u!114 &9850000005
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9850000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9b1c3d5e7f84a0b9c1d2e4f6a8b0cf1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LoveShot.Multiplayer.MPHitVignette
+  image: {fileID: 9850000004}
+  baseStrength: 0.55
+  baseResponse: 4
+  hitSpike: 0.35
+  spikeFade: 0.5
+  convertedSpike: 1
+  maxAlpha: 0.9
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
+  - {fileID: 9830000001}
+  - {fileID: 9830000004}
   - {fileID: 519420032}
   - {fileID: 619394802}
   - {fileID: 1937361980}
